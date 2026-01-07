@@ -11,7 +11,7 @@ static int current_angle = 90;  // 默认初始角度为90度
 static bool is_initialized = false;
 static servo_config_t current_config;
 
-// 默认配置
+// 默认配置 - 使用更通用的脉宽范围
 static const servo_config_t default_config = {
     .pin = SERVO_PIN,
     .channel = SERVO_CHANNEL,
@@ -19,8 +19,8 @@ static const servo_config_t default_config = {
     .speed_mode = SERVO_SPEED_MODE,
     .frequency = SERVO_FREQUENCY,
     .resolution = SERVO_RESOLUTION,
-    .min_pulsewidth = SERVO_MIN_PULSEWIDTH,
-    .max_pulsewidth = SERVO_MAX_PULSEWIDTH
+    .min_pulsewidth = 1000,  // 改为1000us，更通用
+    .max_pulsewidth = 2000   // 改为2000us，更通用
 };
 
 /**
@@ -107,8 +107,8 @@ static esp_err_t servo_control_set_angle_internal(int angle)
     }
     
     current_angle = angle;
-    // ESP_LOGI(TAG, "Servo angle set to %d degrees (pulsewidth: %dus, duty: %lu)", 
-    //          angle, pulsewidth, duty);
+    ESP_LOGI(TAG, "Servo angle set to %d° (pulsewidth: %dus, duty: %lu)", 
+             angle, pulsewidth, duty);
     return ESP_OK;
 }
 
@@ -244,6 +244,10 @@ esp_err_t servo_control_init(const servo_config_t *config)
     }
 
     ESP_LOGI(TAG, "Initializing servo control on GPIO%d", current_config.pin);
+    ESP_LOGI(TAG, "PWM配置: 频率=%dHz, 分辨率=%d位", 
+             current_config.frequency, current_config.resolution);
+    ESP_LOGI(TAG, "脉宽范围: %d-%dus", 
+             current_config.min_pulsewidth, current_config.max_pulsewidth);
 
     // 配置LEDC定时器
     ledc_timer_config_t ledc_timer = {
@@ -305,6 +309,70 @@ esp_err_t servo_control_init(const servo_config_t *config)
 
     is_initialized = true;
     ESP_LOGI(TAG, "Servo control initialized successfully on GPIO%d", current_config.pin);
+    
+    // 立即测试PWM输出
+    ESP_LOGI(TAG, "=== PWM输出测试开始 ===");
+    servo_control_set_angle_internal(0);   // 测试0度
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    servo_control_set_angle_internal(90);  // 测试90度
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    servo_control_set_angle_internal(180); // 测试180度
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    servo_control_set_angle_internal(90);  // 回到90度
+    ESP_LOGI(TAG, "=== PWM输出测试完成 ===");
+    
+    return ESP_OK;
+}
+
+// 添加硬件测试函数
+esp_err_t servo_control_hardware_test(void)
+{
+    if (!is_initialized) {
+        ESP_LOGE(TAG, "Servo control not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ESP_LOGI(TAG, "=== 舵机硬件测试开始 ===");
+    
+    // 测试基本角度设置
+    ESP_LOGI(TAG, "测试基本角度设置...");
+    
+    // 测试0度
+    ESP_LOGI(TAG, "设置舵机到0度");
+    esp_err_t ret = servo_control_set_angle(0);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "设置0度失败: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    
+    // 测试90度
+    ESP_LOGI(TAG, "设置舵机到90度");
+    ret = servo_control_set_angle(90);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "设置90度失败: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    
+    // 测试180度
+    ESP_LOGI(TAG, "设置舵机到180度");
+    ret = servo_control_set_angle(180);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "设置180度失败: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    
+    // 回到90度
+    ESP_LOGI(TAG, "设置舵机回到90度");
+    ret = servo_control_set_angle(90);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "设置90度失败: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    ESP_LOGI(TAG, "=== 舵机硬件测试完成 ===");
     return ESP_OK;
 }
 

@@ -92,6 +92,13 @@ esp_err_t servo_control_smooth_move(int target_angle, int duration_ms, float acc
  */
 esp_err_t servo_control_smooth_test(void);
 
+/**
+ * @brief 舵机硬件测试函数，直接测试基本角度设置
+ * 
+ * @return esp_err_t ESP_OK表示成功，其他表示失败
+ */
+esp_err_t servo_control_hardware_test(void);
+
 #ifdef __cplusplus
 }
 #endif
