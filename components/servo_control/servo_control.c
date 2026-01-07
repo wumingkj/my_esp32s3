@@ -2,6 +2,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <math.h>
 
 static const char *TAG = "servo_control";
 
@@ -21,6 +22,21 @@ static const servo_config_t default_config = {
     .min_pulsewidth = SERVO_MIN_PULSEWIDTH,
     .max_pulsewidth = SERVO_MAX_PULSEWIDTH
 };
+
+/**
+ * @brief S型曲线函数（Sigmoid函数变体）
+ * @param t 时间比例（0.0-1.0）
+ * @param k 曲线陡峭度（值越大曲线越陡峭）
+ * @return float 位置比例（0.0-1.0）
+ */
+static float s_curve(float t, float k) {
+    // 使用改进的S型曲线，确保在0和1处有平滑的边界
+    if (t <= 0.0f) return 0.0f;
+    if (t >= 1.0f) return 1.0f;
+    
+    // 使用双曲正切函数实现S型曲线
+    return 0.5f * (tanhf(k * (t - 0.5f)) / tanhf(k * 0.5f) + 1.0f);
+}
 
 /**
  * @brief 角度转脉宽（微秒）
@@ -93,6 +109,123 @@ static esp_err_t servo_control_set_angle_internal(int angle)
     current_angle = angle;
     // ESP_LOGI(TAG, "Servo angle set to %d degrees (pulsewidth: %dus, duty: %lu)", 
     //          angle, pulsewidth, duty);
+    return ESP_OK;
+}
+
+esp_err_t servo_control_smooth_move(int target_angle, int duration_ms, float acceleration)
+{
+    if (!is_initialized) {
+        ESP_LOGE(TAG, "Servo control not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    // 约束目标角度
+    if (target_angle < SERVO_MIN_ANGLE) {
+        target_angle = SERVO_MIN_ANGLE;
+    } else if (target_angle > SERVO_MAX_ANGLE) {
+        target_angle = SERVO_MAX_ANGLE;
+    }
+
+    // 如果目标角度与当前角度相同，直接返回
+    if (target_angle == current_angle) {
+        return ESP_OK;
+    }
+
+    // 约束加速度参数
+    if (acceleration < 0.01f) acceleration = 0.01f;
+    if (acceleration > 1.0f) acceleration = 1.0f;
+
+    // 计算角度差和移动方向
+    int angle_diff = target_angle - current_angle;
+    int direction = (angle_diff > 0) ? 1 : -1;
+    angle_diff = abs(angle_diff);
+
+    // 计算步数和步长时间
+    int step_count = duration_ms / 20;  // 每20ms更新一次
+    if (step_count < 2) step_count = 2;  // 至少2步
+    
+    float step_time_ms = (float)duration_ms / step_count;
+    
+    ESP_LOGI(TAG, "Smooth move: from %d to %d, duration: %dms, steps: %d", 
+             current_angle, target_angle, duration_ms, step_count);
+
+    // 使用S型曲线进行平滑移动
+    float k = 6.0f * acceleration;  // 曲线陡峭度
+    float accumulated_fraction = 0.0f;  // 累积的小数部分
+    
+    for (int step = 0; step <= step_count; step++) {
+        // 计算时间比例（0.0-1.0）
+        float t = (float)step / step_count;
+        
+        // 使用S型曲线计算位置比例
+        float position_ratio = s_curve(t, k);
+        
+        // 计算目标位置（考虑小数累积）
+        float target_position = current_angle + angle_diff * position_ratio + accumulated_fraction;
+        int actual_angle = (int)target_position;
+        
+        // 处理小数累积
+        accumulated_fraction = target_position - actual_angle;
+        
+        // 约束角度范围
+        if (actual_angle < SERVO_MIN_ANGLE) actual_angle = SERVO_MIN_ANGLE;
+        if (actual_angle > SERVO_MAX_ANGLE) actual_angle = SERVO_MAX_ANGLE;
+        
+        // 设置舵机角度
+        esp_err_t ret = servo_control_set_angle_internal(actual_angle);
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to set angle during smooth move: %s", esp_err_to_name(ret));
+            return ret;
+        }
+        
+        // 延时（最后一步不需要延时）
+        if (step < step_count) {
+            vTaskDelay(pdMS_TO_TICKS((int)step_time_ms));
+        }
+    }
+    
+    ESP_LOGI(TAG, "Smooth move completed");
+    return ESP_OK;
+}
+
+esp_err_t servo_control_smooth_test(void)
+{
+    if (!is_initialized) {
+        ESP_LOGE(TAG, "Servo control not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ESP_LOGI(TAG, "Starting smooth servo test...");
+    
+    // 使用S型曲线平滑移动到0度（缓启动，缓停止）
+    ESP_LOGI(TAG, "Smooth moving to 0 degrees...");
+    esp_err_t ret = servo_control_smooth_move(0, 2000, 0.3f);  // 2秒，中等平滑度
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to move to 0 degrees: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    vTaskDelay(pdMS_TO_TICKS(500));  // 暂停500ms
+    
+    // 使用S型曲线平滑移动到180度
+    ESP_LOGI(TAG, "Smooth moving to 180 degrees...");
+    ret = servo_control_smooth_move(180, 3000, 0.2f);  // 3秒，更平滑
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to move to 180 degrees: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    vTaskDelay(pdMS_TO_TICKS(500));  // 暂停500ms
+    
+    // 使用S型曲线平滑移动回90度
+    ESP_LOGI(TAG, "Smooth moving to 90 degrees...");
+    ret = servo_control_smooth_move(90, 2500, 0.4f);  // 2.5秒，较陡峭
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to move to 90 degrees: %s", esp_err_to_name(ret));
+        return ret;
+    }
+    
+    ESP_LOGI(TAG, "Smooth servo test completed");
     return ESP_OK;
 }
 
@@ -199,37 +332,28 @@ esp_err_t servo_control_test(void)
 
     ESP_LOGI(TAG, "Starting servo test...");
     
-    // 从当前角度转到0度
+    // 从当前角度转到0度（使用平滑移动替代线性步进）
     ESP_LOGI(TAG, "Moving to 0 degrees...");
-    for (int angle = current_angle; angle >= SERVO_MIN_ANGLE; angle -= 10) {
-        esp_err_t ret = servo_control_set_angle(angle);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to set angle during test: %s", esp_err_to_name(ret));
-            return ret;
-        }
-        vTaskDelay(pdMS_TO_TICKS(100));
+    esp_err_t ret = servo_control_smooth_move(0, 1500, 0.5f);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set angle during test: %s", esp_err_to_name(ret));
+        return ret;
     }
     
     // 从0度转到180度
     ESP_LOGI(TAG, "Moving to 180 degrees...");
-    for (int angle = SERVO_MIN_ANGLE; angle <= SERVO_MAX_ANGLE; angle += 10) {
-        esp_err_t ret = servo_control_set_angle(angle);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to set angle during test: %s", esp_err_to_name(ret));
-            return ret;
-        }
-        vTaskDelay(pdMS_TO_TICKS(100));
+    ret = servo_control_smooth_move(180, 2000, 0.5f);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set angle during test: %s", esp_err_to_name(ret));
+        return ret;
     }
     
     // 从180度转回90度（中间位置）
     ESP_LOGI(TAG, "Moving to 90 degrees...");
-    for (int angle = SERVO_MAX_ANGLE; angle >= 90; angle -= 10) {
-        esp_err_t ret = servo_control_set_angle(angle);
-        if (ret != ESP_OK) {
-            ESP_LOGE(TAG, "Failed to set angle during test: %s", esp_err_to_name(ret));
-            return ret;
-        }
-        vTaskDelay(pdMS_TO_TICKS(100));
+    ret = servo_control_smooth_move(90, 1500, 0.5f);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set angle during test: %s", esp_err_to_name(ret));
+        return ret;
     }
     
     ESP_LOGI(TAG, "Servo test completed");

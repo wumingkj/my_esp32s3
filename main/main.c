@@ -208,6 +208,64 @@ cleanup:
     }
 }
 
+// 舵机雷达扫描函数 - 简化版本
+static void servo_radar_scan(void) {
+    static int current_angle = 90;           // 当前角度
+    static int direction = 1;               // 扫描方向：1向右，-1向左
+    static bool is_moving = false;          // 是否正在移动
+    static uint32_t move_start_time = 0;    // 移动开始时间
+    static uint32_t move_duration = 0;      // 移动持续时间
+    
+    // 平滑移动参数
+    const uint32_t min_time = 1000;  // 最小移动时间(ms)
+    const uint32_t max_time = 3000;  // 最大移动时间(ms)
+    const float min_accel = 0.2;     // 最小加速度
+    const float max_accel = 0.5;     // 最大加速度
+
+    uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+    if (!is_moving) {
+        // 计算目标角度
+        int target_angle = (direction == 1) ? 180 : 0;
+        
+        // 智能计算移动参数
+        int angle_diff = abs(target_angle - current_angle);
+        float ratio = (float)angle_diff / 180.0f;
+        
+        move_duration = min_time + (uint32_t)((max_time - min_time) * ratio);
+        float acceleration = min_accel + (max_accel - min_accel) * (1.0f - ratio);
+        
+        ESP_LOGI(TAG, "舵机扫描: %d°→%d°, 时间:%lums, 加速度:%.2f", 
+                 current_angle, target_angle, move_duration, acceleration);
+        
+        // 开始平滑移动
+        esp_err_t ret = servo_control_smooth_move(target_angle, move_duration, acceleration);
+        if (ret == ESP_OK) {
+            is_moving = true;
+            move_start_time = current_time;
+        } else {
+            // 备用方案：直接设置角度
+            servo_control_set_angle(target_angle);
+            current_angle = target_angle;
+            direction = -direction;
+        }
+    } else {
+        // 检查移动是否完成
+        if (current_time - move_start_time >= move_duration) {
+            // 更新角度并反转方向
+            current_angle = (direction == 1) ? 180 : 0;
+            is_moving = false;
+            direction = -direction;
+            
+            // 边界暂停
+            if (current_angle == 0 || current_angle == 180) {
+                ESP_LOGI(TAG, "舵机到达边界%d°，暂停500ms", current_angle);
+                vTaskDelay(pdMS_TO_TICKS(500));
+            }
+        }
+    }
+}
+
 void app_main(void) {
     ESP_LOGI(TAG, "ESP32-S3 application started");
     
@@ -272,123 +330,37 @@ void app_main(void) {
     
     // 设备映射相关变量
     static uint32_t last_device_check_time = 0;
-    
-    // 舵机雷达扫描相关变量 - 缓急缓效果
-    static int current_angle = 90;           // 当前角度
-    static int direction = 1;               // 扫描方向：1表示增加，-1表示减少
-    static uint32_t last_servo_move_time = 0; // 上次舵机移动时间
-    static float current_speed = 0.0;       // 当前速度（度/次）
-    static float acceleration = 0.1;        // 加速度（度/次²）
-    
-    // 速度参数
-    const float max_speed = 1.0;            // 最大速度（度/次）
-    const float min_speed = 0.1;            // 最小速度（度/次）
-    const uint32_t base_interval = 25;      // 基础移动间隔(毫秒)
-    
-    while (true)
-    {
-        // 主循环 - 保持系统运行
+
+    while (true) {
         uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
 
-        // 舵机雷达扫描逻辑 - 缓急缓效果
-        if (current_time - last_servo_move_time > base_interval) {
-            // 计算目标速度（基于当前位置的缓急缓曲线）
-            float target_speed;
-            
-            if (direction == 1) {  // 向右扫描（0度 → 180度）
-                if (current_angle <= 90) {
-                    // 0-90度：加速阶段
-                    target_speed = min_speed + (max_speed - min_speed) * (current_angle / 90.0);
-                } else {
-                    // 90-180度：减速阶段
-                    target_speed = max_speed - (max_speed - min_speed) * ((current_angle - 90) / 90.0);
-                }
-            } else {  // 向左扫描（180度 → 0度）
-                if (current_angle >= 90) {
-                    // 180-90度：加速阶段
-                    target_speed = min_speed + (max_speed - min_speed) * ((180 - current_angle) / 90.0);
-                } else {
-                    // 90-0度：减速阶段
-                    target_speed = max_speed - (max_speed - min_speed) * ((90 - current_angle) / 90.0);
-                }
-            }
-            
-            // 平滑调整当前速度
-            if (current_speed < target_speed) {
-                current_speed += acceleration;
-                if (current_speed > target_speed) current_speed = target_speed;
-            } else if (current_speed > target_speed) {
-                current_speed -= acceleration;
-                if (current_speed < target_speed) current_speed = target_speed;
-            }
-            
-            // 确保速度在合理范围内
-            if (current_speed < min_speed) current_speed = min_speed;
-            if (current_speed > max_speed) current_speed = max_speed;
-            
-            // 计算角度增量（整数部分和小数部分）
-            int angle_increment = (int)current_speed;
-            float fractional_part = current_speed - angle_increment;
-            
-            // 处理小数部分（概率性增加1度）
-            if ((float)rand() / RAND_MAX < fractional_part) {
-                angle_increment += 1;
-            }
-            
-            // 更新舵机角度
-            current_angle += direction * angle_increment;
-            
-            // 边界检查和方向反转
-            if (current_angle >= 180) {
-                current_angle = 180;
-                direction = -1;  // 改变方向为向左
-                current_speed = min_speed;  // 重置速度
-                //ESP_LOGI(TAG, "舵机扫描到达右边界180度，开始向左扫描");
-            } else if (current_angle <= 0) {
-                current_angle = 0;
-                direction = 1;   // 改变方向为向右
-                current_speed = min_speed;  // 重置速度
-                //ESP_LOGI(TAG, "舵机扫描到达左边界0度，开始向右扫描");
-            }
-            
-            // 设置舵机角度
-            ret = servo_control_set_angle(current_angle);
-            if (ret != ESP_OK) {
-                ESP_LOGE(TAG, "Failed to set servo angle: %s", esp_err_to_name(ret));
-            } else {
-                // 调试信息（可选）
-                // ESP_LOGI(TAG, "舵机角度: %d度, 速度: %.2f度/次", current_angle, current_speed);
-            }
-            
-            last_servo_move_time = current_time;
-        }
+        // 舵机雷达扫描 - 简化调用
+        servo_radar_scan();
 
-        // 每60秒检查一次设备状态
+        // 设备状态检查（每60秒）
         if (current_time - last_device_check_time > 60000) {
-            // 刷新设备状态（标记30秒内不活跃的设备）
             device_mapping_refresh_status(30);
             
-            // 显示当前设备映射表
             int device_count = device_mapping_get_count();
             if (device_count > 0) {
-                ESP_LOGI(TAG, "=== Device Mapping Table (%d devices) ===", device_count);
+                ESP_LOGI(TAG, "=== 设备映射表 (%d 设备) ===", device_count);
                 
                 device_mapping_t** devices = device_mapping_get_all_devices(NULL);
                 for (int i = 0; i < device_count; i++) {
-                    ESP_LOGI(TAG, "  %d. Hostname: %s, IP: %s, MAC: %s, Active: %s", 
+                    ESP_LOGI(TAG, "  %d. 主机名: %s, IP: %s, MAC: %s, 活跃: %s", 
                         i + 1, 
                         devices[i]->hostname,
                         devices[i]->ip,
                         devices[i]->mac,
-                        devices[i]->is_active ? "Yes" : "No");
+                        devices[i]->is_active ? "是" : "否");
                 }
             } else {
-                ESP_LOGI(TAG, "No devices in mapping table");
+                ESP_LOGI(TAG, "映射表中无设备");
             }
             
             last_device_check_time = current_time;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(10)); // 保持系统响应性
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
 }

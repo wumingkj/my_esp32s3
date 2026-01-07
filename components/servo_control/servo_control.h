@@ -75,6 +75,23 @@ esp_err_t servo_control_test(void);
  */
 esp_err_t servo_control_deinit(void);
 
+/**
+ * @brief 平滑移动舵机到指定角度（使用S型曲线加速/减速）
+ * 
+ * @param target_angle 目标角度(0-180度)
+ * @param duration_ms 移动总时间（毫秒）
+ * @param acceleration 加速度因子（0.0-1.0，值越小越平滑）
+ * @return esp_err_t ESP_OK表示成功，其他表示失败
+ */
+esp_err_t servo_control_smooth_move(int target_angle, int duration_ms, float acceleration);
+
+/**
+ * @brief 平滑舵机测试函数，使用S型曲线实现缓启动和缓停止
+ * 
+ * @return esp_err_t ESP_OK表示成功，其他表示失败
+ */
+esp_err_t servo_control_smooth_test(void);
+
 #ifdef __cplusplus
 }
 #endif
