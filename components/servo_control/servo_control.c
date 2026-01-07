@@ -19,8 +19,8 @@ static const servo_config_t default_config = {
     .speed_mode = SERVO_SPEED_MODE,
     .frequency = SERVO_FREQUENCY,
     .resolution = SERVO_RESOLUTION,
-    .min_pulsewidth = 1000,  // 改为1000us，更通用
-    .max_pulsewidth = 2000   // 改为2000us，更通用
+    .min_pulsewidth = 500,  // 改为标准500us
+    .max_pulsewidth = 2500  // 改为标准2500us
 };
 
 /**
