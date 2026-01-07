@@ -1,0 +1,12 @@
+{
+  "macs": [
+    {
+      "mac": "AA:BB:CC:11:22:33",
+      "description": "示例白名单设备"
+    },
+    {
+      "mac": "48:29:d6:8d:ca:95",
+      "description": "OnePlus Ace2 Pro"
+    }
+  ]
+}

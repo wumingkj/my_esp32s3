@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32-S3 网络设置</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>网络设置</h1>
+        
+        <h2>AP网络设置</h2>
+        <form id="apForm">
+            <label for="ap_ssid">AP SSID:</label>
+            <input type="text" id="ap_ssid" name="ap_ssid" required>
+            
+            <label for="ap_password">AP密码:</label>
+            <input type="password" id="ap_password" name="ap_password" required>
+            
+            <button type="button" class="button" onclick="updateAPNetwork()">更新AP网络</button>
+        </form>
+
+        <h2>STA网络设置</h2>
+        <form id="staForm">
+            <label for="sta_ssid">STA SSID:</label>
+            <input type="text" id="sta_ssid" name="ssid" required>
+            
+            <label for="sta_password">STA密码:</label>
+            <input type="password" id="sta_password" name="password" required>
+            
+            <button type="button" class="button" onclick="addSTA()">添加STA网络</button>
+        </form>
+        
+        <div id="staList">
+            <!-- STA网络列表将通过JavaScript动态生成 -->
+        </div>
+    </div>
+    
+    <script src="common.js"></script>
+</body>
+</html>

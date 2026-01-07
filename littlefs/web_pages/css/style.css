@@ -1,0 +1,231 @@
+/* 全局样式 */
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #f4f4f4;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100vh;
+}
+
+/* 容器样式 */
+.container {
+  max-width: 800px;
+  width: 100%;
+  padding: 20px;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
+  margin: 20px 0;
+  overflow: auto;
+}
+
+/* 标题样式 */
+h1, h2, h3 {
+  color: #333;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+/* 表格样式 */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+  table-layout: auto;
+}
+
+th, td {
+  text-align: left;
+  padding: 12px;
+  border: 1px solid #ddd;
+  vertical-align: top;
+}
+
+th {
+  background-color: #f2f2f2;
+  color: #333;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+/* 表单样式 */
+form {
+  display: flex;
+  flex-direction: column;
+  margin-top: 20px;
+}
+
+/* 输入框、选择框和文本区域样式 */
+input, select, textarea {
+  width: 100%;
+  padding: 10px;
+  margin: 10px 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-sizing: border-box;
+  font-size: 16px;
+}
+
+/* 提交按钮样式 */
+input[type=submit] {
+  background: #007BFF;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  padding: 12px;
+  border-radius: 4px;
+  width: 100%;
+  font-size: 16px;
+  transition: background 0.3s ease;
+}
+
+input[type=submit]:hover {
+  background: #0056b3;
+}
+
+/* 切换密码可见性按钮样式 */
+.toggle-password {
+  cursor: pointer;
+  color: #007BFF;
+  font-size: 0.9em;
+  text-decoration: underline;
+  margin-top: 5px;
+  display: inline-block;
+}
+
+.toggle-password:hover {
+  text-decoration: none;
+}
+
+/* 按钮样式 */
+.button {
+  background: #007BFF;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  padding: 10px 20px;
+  border-radius: 4px;
+  text-decoration: none;
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 16px;
+  transition: background 0.3s ease;
+}
+
+.button:hover {
+  background: #0056b3;
+}
+
+/* 导航列表样式 */
+.nav-list {
+  list-style-type: none;
+  padding: 0;
+}
+
+.nav-list li {
+  margin: 10px 0;
+}
+
+.nav-list a {
+  display: block;
+  padding: 10px;
+  background: #f8f9fa;
+  border-radius: 4px;
+  text-decoration: none;
+  color: #333;
+  transition: background 0.3s ease;
+}
+
+.nav-list a:hover {
+  background: #e9ecef;
+}
+
+/* 舵机控制滑块样式 */
+#servoControl {
+  max-width: 600px;
+  margin: 20px auto;
+}
+
+#angleSlider {
+  width: 100%;
+  height: 40px;
+}
+
+#angleIndicator {
+  position: absolute;
+  top: -25px;
+  transform: translateX(-50%);
+  transition: left 0.1s ease;
+  pointer-events: none;
+}
+
+/* RGB控制自定义选项样式 */
+#customColorOptions {
+  border: 1px solid #ddd;
+  padding: 15px;
+  border-radius: 4px;
+  margin-top: 10px;
+}
+
+#uniqueColorsContainer div {
+  margin: 10px 0;
+  padding: 10px;
+  background: #f9f9f9;
+  border-radius: 4px;
+}
+
+/* 媒体查询 */
+@media (max-width: 800px) {
+  .container {
+    padding: 15px;
+  }
+
+  h1, h2, h3 {
+    font-size: 20px;
+  }
+
+  input, select, textarea {
+    font-size: 14px;
+    padding: 8px;
+    margin: 8px 0;
+  }
+
+  input[type=submit], .button {
+    font-size: 14px;
+    padding: 8px;
+  }
+
+  th, td {
+    padding: 8px;
+  }
+}
+
+@media (max-width: 600px) {
+  .container {
+    padding: 10px;
+  }
+
+  h1, h2, h3 {
+    font-size: 18px;
+  }
+
+  input, select, textarea {
+    font-size: 14px;
+    padding: 6px;
+    margin: 6px 0;
+  }
+
+  input[type=submit], .button {
+    font-size: 14px;
+    padding: 6px;
+  }
+
+  th, td {
+    padding: 6px;
+  }
+}

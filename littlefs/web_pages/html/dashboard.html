@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32-S3 仪表盘</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>欢迎来到 ESP32-S3 仪表盘</h1>
+        
+        <div id="esp32Info"></div>
+        <div id="macList"></div>
+        
+        <h2>导航</h2>
+        <ul class="nav-list">
+            <li><a href="/controls">控制菜单</a></li>
+            <li><a href="/network">网络设置</a></li>
+            <li><a href="/account">账户管理</a></li>
+            <li><a href="/backup-restore">备份与恢复</a></li>
+            <li><a href="/logout">退出登录</a></li>
+        </ul>
+        
+        <h2>命令执行</h2>
+        <form id="commandForm" onsubmit="executeCommand(event)">
+            <label for="cmd">输入命令:</label>
+            <input type="text" id="cmd" name="cmd" autocomplete="off" autofocus>
+            <input type="submit" value="执行命令">
+        </form>
+    </div>
+    
+    <script src="common.js"></script>
+</body>
+</html>

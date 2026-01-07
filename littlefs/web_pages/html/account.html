@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32-S3 账户管理</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>账户管理</h1>
+        
+        <h2>现有用户列表</h2>
+        <div id="userList">
+            <!-- 用户列表将通过JavaScript动态生成 -->
+        </div>
+
+        <h2>创建新账号</h2>
+        <form action="/create-account" method="post" onsubmit="return handleFormSubmit('createAccountForm', event)">
+            <label for="new_username">用户名:</label>
+            <input type="text" id="new_username" name="username" required>
+            
+            <label for="new_password">密码:</label>
+            <input type="password" id="new_password" name="password" required>
+            
+            <input type="submit" value="创建账号">
+        </form>
+
+        <h2>修改密码</h2>
+        <form action="/update-password" method="post" onsubmit="return handleFormSubmit('updatePasswordForm', event)">
+            <label for="update_username">用户名:</label>
+            <input type="text" id="update_username" name="username" required>
+            
+            <label for="current_password">当前密码:</label>
+            <input type="password" id="current_password" name="current_password" required>
+            
+            <label for="new_password2">新密码:</label>
+            <input type="password" id="new_password2" name="new_password" required>
+            
+            <label for="confirm_password">确认新密码:</label>
+            <input type="password" id="confirm_password" name="confirm_password" required>
+            
+            <input type="submit" value="修改密码">
+        </form>
+    </div>
+    
+    <script src="common.js"></script>
+</body>
+</html>

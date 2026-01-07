@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32-S3 控制面板</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>综合控制面板</h1>
+        
+        <h2>步进电机控制</h2>
+        <form id="motorForm" action="/motor-control" method="post" onsubmit="return handleFormSubmit('motorForm', event)">
+            <label for="direction">旋转方向:</label>
+            <select name="direction" id="direction">
+                <option value="OFF">停止</option>
+                <option value="CW">顺时针</option>
+                <option value="CCW">逆时针</option>
+            </select>
+            
+            <label for="steps">步数:</label>
+            <input type="number" id="steps" name="steps">
+            
+            <input type="submit" value="控制步进电机">
+        </form>
+
+        <h2>实时舵机控制</h2>
+        <div id="servoControl">
+            <div style="position: relative;">
+                <input type="range" 
+                       id="angleSlider" 
+                       min="0" 
+                       max="180" 
+                       value="90"
+                       step="1"
+                       oninput="handleAngleChange(this.value)">
+                
+                <div id="angleIndicator">
+                    <div style="background: #2196F3; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.9em;">
+                        <span id="angleValue">90</span>°
+                    </div>
+                    <div style="width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid #2196F3; margin: 0 auto;"></div>
+                </div>
+            </div>
+            
+            <div style="display: flex; justify-content: space-between; color: #666; margin-top: 10px; padding: 0 5px;">
+                <span>0°</span>
+                <span>90°</span>
+                <span>180°</span>
+            </div>
+        </div>
+
+        <h2>RGB灯控制</h2>
+        <form id="rgbForm" action="/rgb-control" method="post" onsubmit="return handleFormSubmit('rgbForm', event)">
+            <label for="rgbModeSelect">模式:</label>
+            <select name="mode" id="rgbModeSelect" onchange="toggleCustomMode()">
+                <option value="OFF">关</option>
+                <option value="ColorfulGradients">七彩渐变</option>
+                <option value="MusicAmbientLighting">音乐氛围灯(需要麦克风模块)</option>
+                <option value="ColorfulRunningWaterLanterns">七彩流水灯</option>
+                <option value="Custom">自定义模式</option>
+            </select>
+            
+            <div id="customColorOptions">
+                <h3>全局颜色</h3>
+                <label for="globalColor">全局颜色 (所有灯珠默认颜色):</label>
+                <input type="color" id="globalColor" name="globalColor">
+                
+                <h4>独有颜色</h4>
+                <div id="uniqueColorsContainer"></div>
+                <button type="button" onclick="addUniqueColor()">添加独有颜色</button>
+            </div>
+            
+            <input type="submit" value="控制RGB灯">
+        </form>
+
+        <h2>TFT屏幕配置</h2>
+        <label for="tftBrightness">亮度:</label>
+        <input type="range" id="tftBrightness" name="brightness" min="0" max="255" oninput="handleBrightnessChange(event)">
+        
+        <label for="modeSelect">显示模式:</label>
+        <select id="modeSelect" onchange="updateDisplayMode()">
+            <option value="0">默认显示</option>
+            <option value="1">自定义文字</option>
+            <option value="2">上传图片</option>
+            <option value="3">系统信息</option>
+        </select>
+        
+        <div id="customContentForm">
+            <form action="/custom-content" method="post" onsubmit="return handleFormSubmit('customContentForm', event)">
+                <label for="content">内容:</label>
+                <textarea name="content" id="content" rows="4" cols="50"></textarea>
+                <input type="submit" value="更新内容">
+            </form>
+        </div>
+        
+        <div id="uploadImageForm">
+            <form action="/upload-image" method="post" enctype="multipart/form-data" onsubmit="return handleFormSubmit('uploadImageForm', event)">
+                <label for="image">图片:</label>
+                <input type="file" id="image" name="image">
+                <input type="submit" value="上传图片">
+            </form>
+        </div>
+        
+        <div id="tftMenuControl">
+            <h3>TFT菜单控制</h3>
+            <button class="button" onclick="sendMenuCommand('prev')">左方向</button>
+            <button class="button" onclick="sendMenuCommand('next')">右方向</button>
+            <button class="button" onclick="sendMenuCommand('select')">确定键</button>
+            <button class="button" onclick="sendMenuCommand('back')">返回键</button>
+        </div>
+    </div>
+    
+    <script src="common.js"></script>
+</body>
+</html>

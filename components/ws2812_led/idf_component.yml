@@ -1,0 +1,6 @@
+## IDF Component Manager Manifest File
+dependencies:
+  espressif/led_strip: "^2.0.0"
+description: "WS2812 RGB LED control library for ESP32-S3"
+url: "https://github.com/espressif/esp-idf"
+version: "1.0.0"

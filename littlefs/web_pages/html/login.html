@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32-S3 Web 管理 - 登录</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>ESP32-S3 Web 管理</h1>
+        <form action="/login" method="post">
+            <label for="username">用户名:</label>
+            <input type="text" id="username" name="username" required>
+            
+            <label for="password">密码:</label>
+            <input type="password" id="password" name="password" required>
+            
+            <span id="toggle_password" class="toggle-password" onclick="togglePasswordVisibility()">显示密码</span>
+            
+            <input type="submit" value="登录">
+        </form>
+    </div>
+    
+    <script src="common.js"></script>
+</body>
+</html>
