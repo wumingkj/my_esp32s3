@@ -1,0 +1,5 @@
+.vscode/
+.devcontainer/
+esp32s3（果云版）
+sdkconfig.old
+build/
