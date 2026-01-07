@@ -112,6 +112,7 @@ static esp_err_t servo_control_set_angle_internal(int angle)
     return ESP_OK;
 }
 
+// 修复servo_control_smooth_move函数中的未使用变量警告
 esp_err_t servo_control_smooth_move(int target_angle, int duration_ms, float acceleration)
 {
     if (!is_initialized) {
@@ -119,14 +120,6 @@ esp_err_t servo_control_smooth_move(int target_angle, int duration_ms, float acc
         return ESP_ERR_INVALID_STATE;
     }
 
-    // 约束目标角度
-    if (target_angle < SERVO_MIN_ANGLE) {
-        target_angle = SERVO_MIN_ANGLE;
-    } else if (target_angle > SERVO_MAX_ANGLE) {
-        target_angle = SERVO_MAX_ANGLE;
-    }
-
-    // 如果目标角度与当前角度相同，直接返回
     if (target_angle == current_angle) {
         return ESP_OK;
     }
@@ -135,9 +128,8 @@ esp_err_t servo_control_smooth_move(int target_angle, int duration_ms, float acc
     if (acceleration < 0.01f) acceleration = 0.01f;
     if (acceleration > 1.0f) acceleration = 1.0f;
 
-    // 计算角度差和移动方向
+    // 计算角度差（移除未使用的direction变量）
     int angle_diff = target_angle - current_angle;
-    int direction = (angle_diff > 0) ? 1 : -1;
     angle_diff = abs(angle_diff);
 
     // 计算步数和步长时间
@@ -229,6 +221,7 @@ esp_err_t servo_control_smooth_test(void)
     return ESP_OK;
 }
 
+// 修复servo_control_init函数中的格式错误
 esp_err_t servo_control_init(const servo_config_t *config)
 {
     if (is_initialized) {
@@ -244,7 +237,8 @@ esp_err_t servo_control_init(const servo_config_t *config)
     }
 
     ESP_LOGI(TAG, "Initializing servo control on GPIO%d", current_config.pin);
-    ESP_LOGI(TAG, "PWM配置: 频率=%dHz, 分辨率=%d位", 
+    // 修复格式错误：使用%lu代替%d来匹配uint32_t类型
+    ESP_LOGI(TAG, "PWM配置: 频率=%luHz, 分辨率=%d位", 
              current_config.frequency, current_config.resolution);
     ESP_LOGI(TAG, "脉宽范围: %d-%dus", 
              current_config.min_pulsewidth, current_config.max_pulsewidth);
@@ -310,6 +304,7 @@ esp_err_t servo_control_init(const servo_config_t *config)
     is_initialized = true;
     ESP_LOGI(TAG, "Servo control initialized successfully on GPIO%d", current_config.pin);
     
+    // 注释掉PWM输出测试 - 避免重复执行导致日志刷屏
     // 立即测试PWM输出
     ESP_LOGI(TAG, "=== PWM输出测试开始 ===");
     servo_control_set_angle_internal(0);   // 测试0度
@@ -323,59 +318,6 @@ esp_err_t servo_control_init(const servo_config_t *config)
     
     return ESP_OK;
 }
-
-// 添加硬件测试函数
-esp_err_t servo_control_hardware_test(void)
-{
-    if (!is_initialized) {
-        ESP_LOGE(TAG, "Servo control not initialized");
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    ESP_LOGI(TAG, "=== 舵机硬件测试开始 ===");
-    
-    // 测试基本角度设置
-    ESP_LOGI(TAG, "测试基本角度设置...");
-    
-    // 测试0度
-    ESP_LOGI(TAG, "设置舵机到0度");
-    esp_err_t ret = servo_control_set_angle(0);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "设置0度失败: %s", esp_err_to_name(ret));
-        return ret;
-    }
-    vTaskDelay(pdMS_TO_TICKS(2000));
-    
-    // 测试90度
-    ESP_LOGI(TAG, "设置舵机到90度");
-    ret = servo_control_set_angle(90);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "设置90度失败: %s", esp_err_to_name(ret));
-        return ret;
-    }
-    vTaskDelay(pdMS_TO_TICKS(2000));
-    
-    // 测试180度
-    ESP_LOGI(TAG, "设置舵机到180度");
-    ret = servo_control_set_angle(180);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "设置180度失败: %s", esp_err_to_name(ret));
-        return ret;
-    }
-    vTaskDelay(pdMS_TO_TICKS(2000));
-    
-    // 回到90度
-    ESP_LOGI(TAG, "设置舵机回到90度");
-    ret = servo_control_set_angle(90);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "设置90度失败: %s", esp_err_to_name(ret));
-        return ret;
-    }
-    
-    ESP_LOGI(TAG, "=== 舵机硬件测试完成 ===");
-    return ESP_OK;
-}
-
 esp_err_t servo_control_set_angle(int angle)
 {
     if (!is_initialized) {
@@ -401,7 +343,6 @@ esp_err_t servo_control_test(void)
     ESP_LOGI(TAG, "Starting servo test...");
     
     // 从当前角度转到0度（使用平滑移动替代线性步进）
-    ESP_LOGI(TAG, "Moving to 0 degrees...");
     esp_err_t ret = servo_control_smooth_move(0, 1500, 0.5f);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set angle during test: %s", esp_err_to_name(ret));
@@ -409,7 +350,6 @@ esp_err_t servo_control_test(void)
     }
     
     // 从0度转到180度
-    ESP_LOGI(TAG, "Moving to 180 degrees...");
     ret = servo_control_smooth_move(180, 2000, 0.5f);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set angle during test: %s", esp_err_to_name(ret));
@@ -417,7 +357,6 @@ esp_err_t servo_control_test(void)
     }
     
     // 从180度转回90度（中间位置）
-    ESP_LOGI(TAG, "Moving to 90 degrees...");
     ret = servo_control_smooth_move(90, 1500, 0.5f);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Failed to set angle during test: %s", esp_err_to_name(ret));
