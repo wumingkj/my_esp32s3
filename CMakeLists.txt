@@ -34,11 +34,11 @@ if(EXISTS "${ABSOLUTE_LITTLEFS_DIR}")
         COPYONLY
     )
     
-    # 简化：只在构建时运行一次检测，而不是在CMake配置时
-    add_custom_target(check_littlefs_changes ALL
+    # 修复：使用英文注释避免编码问题，并移除ALL标志
+    add_custom_target(check_littlefs_changes
         COMMAND ${PYTHON} ${CMAKE_BINARY_DIR}/check_littlefs_changes.py 
                 "${ABSOLUTE_LITTLEFS_DIR}" "${LITTLEFS_HASH_FILE}"
-        COMMENT "检测LittleFS文件系统变化"
+        COMMENT "Checking LittleFS file system changes"
         VERBATIM
     )
     
@@ -49,15 +49,15 @@ if(EXISTS "${ABSOLUTE_LITTLEFS_DIR}")
         FLASH_IN_PROJECT  # 启用自动烧录
     )
     
-    message(STATUS "智能条件烧录配置完成")
-    message(STATUS "源目录: ${ABSOLUTE_LITTLEFS_DIR}")
-    message(STATUS "哈希文件: ${LITTLEFS_HASH_FILE}")
-    message(STATUS "使用说明:")
-    message(STATUS "  - 正常开发: idf.py app-flash (仅烧录应用程序)")
-    message(STATUS "  - 文件系统变化时: idf.py flash (烧录所有)")
-    message(STATUS "  - 仅烧录文件系统: idf.py littlefs-flash")
+    message(STATUS "Smart conditional flash configuration completed")
+    message(STATUS "Source directory: ${ABSOLUTE_LITTLEFS_DIR}")
+    message(STATUS "Hash file: ${LITTLEFS_HASH_FILE}")
+    message(STATUS "Usage instructions:")
+    message(STATUS "  - Normal development: idf.py app-flash (flash app only)")
+    message(STATUS "  - When filesystem changes: idf.py flash (flash all)")
+    message(STATUS "  - Flash filesystem only: idf.py littlefs-flash")
     
 else()
-    message(WARNING "littlefs目录不存在: ${ABSOLUTE_LITTLEFS_DIR}")
-    message(WARNING "跳过文件系统镜像生成")
+    message(WARNING "littlefs directory not found: ${ABSOLUTE_LITTLEFS_DIR}")
+    message(WARNING "Skipping filesystem image generation")
 endif()

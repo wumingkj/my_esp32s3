@@ -11,31 +11,42 @@
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/timers.h"
 #include "esp_chip_info.h"
 #include "esp_system.h"
 #include "esp_log.h"
-#include "esp_task_wdt.h" // 添加看门狗头文件
+#include "esp_task_wdt.h"
+
 #include "partition_manager.h"
 #include "frequency_manager.h"
 #include "wifi_manager.h"
-#include "littlefs_manager.h" // 使用重构后的文件系统管理器
+#include "littlefs_manager.h"
 #include "session_manager.h"
 #include "user_manager.h"
-#include "servo_control.h" // 添加舵机控制头文件
-#include "ws2812_led.h"    // 添加WS2812 LED控制头文件
+#include "servo_control.h"
+#include "ws2812_led.h"
 
 static const char *TAG = "Main";
 
-// 舵机配置 - 使用正确的常量名称
+// 全局CPU使用率数组 [core0, core1]
+static float cpu_usage[2] = {0.0f, 0.0f};
+static SemaphoreHandle_t cpu_usage_mutex;
+
+// 任务统计相关变量
+static uint32_t task_runtime_core0 = 0;
+static uint32_t task_runtime_core1 = 0;
+static uint32_t last_stat_time = 0;
+
+// 舵机配置
 static servo_config_t servo_config = {
-    .pin = SERVO_PIN,           // GPIO38
-    .channel = SERVO_CHANNEL,   // LEDC通道0
-    .timer = SERVO_TIMER,       // LEDC定时器0
-    .speed_mode = SERVO_SPEED_MODE, // LEDC速度模式
-    .frequency = SERVO_FREQUENCY,   // 50Hz
-    .resolution = SERVO_RESOLUTION, // 12位分辨率
-    .min_pulsewidth = SERVO_MIN_PULSEWIDTH, // 500us
-    .max_pulsewidth = SERVO_MAX_PULSEWIDTH  // 2500us
+    .pin = SERVO_PIN,
+    .channel = SERVO_CHANNEL,
+    .timer = SERVO_TIMER,
+    .speed_mode = SERVO_SPEED_MODE,
+    .frequency = SERVO_FREQUENCY,
+    .resolution = SERVO_RESOLUTION,
+    .min_pulsewidth = SERVO_MIN_PULSEWIDTH,
+    .max_pulsewidth = SERVO_MAX_PULSEWIDTH
 };
 
 // 频率管理器配置
@@ -46,99 +57,137 @@ static frequency_manager_config_t freq_config = {
     .power_save_freq = 80,
     .custom_freq = 240};
 
-// WiFi配置 - 包含AP和STA配置
+// WiFi配置
 static wifi_manager_config_t wifi_config = {
     .ap_ssid = "ESP32-S3-AP",
     .ap_password = "12345678",
-    .sta_ssid = "",     // 初始为空
-    .sta_password = "", // 初始为空
+    .sta_ssid = "",
+    .sta_password = "",
     .enable_nat = true,
     .enable_dhcp_server = true};
 
-// WiFi管理任务
-static void wifi_manager_task(void *pvParameters)
+// 获取任务运行时间统计
+static void get_task_runtime_stats(void)
 {
-    ESP_LOGI(TAG, "WiFi manager task started");
-
-    // 初始化WiFi管理器
-    esp_err_t ret = wifi_manager_init(&wifi_config);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "WiFi manager initialization failed: %s", esp_err_to_name(ret));
-        vTaskDelete(NULL);
-        return;
-    }
-
-    // 启动AP模式（使用默认AP名称）
-    ret = wifi_manager_start_ap("ap_map", wifi_config.ap_ssid, wifi_config.ap_password);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to start AP: %s", esp_err_to_name(ret));
-    }
-
-    // 启动Web服务器
-    ret = wifi_manager_start_web_server();
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to start web server: %s", esp_err_to_name(ret));
-    }
-
-    // 获取并显示网络信息
-    network_info_t net_info;
-    wifi_manager_get_network_info(&net_info);
-
-    ESP_LOGI(TAG, "Network Information:");
-    ESP_LOGI(TAG, "  AP IP: %s", net_info.ap_ip);
-    ESP_LOGI(TAG, "  Netmask: %s", net_info.netmask);
-
-    // 主循环 - 监控网络状态
-    while (1)
-    {
-        // 每30秒扫描一次连接的设备
-        static uint32_t last_scan_time = 0;
-        uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS / 1000;
-
-        if (current_time - last_scan_time >= 30)
-        {
-            wifi_manager_scan_connected_devices("ap_map");
-            last_scan_time = current_time;
-            ESP_LOGI(TAG, "Device scan completed");
+    TaskStatus_t *pxTaskStatusArray;
+    volatile UBaseType_t uxArraySize, x;
+    uint32_t ulTotalRunTime;
+    
+    // 获取当前任务数量
+    uxArraySize = uxTaskGetNumberOfTasks();
+    
+    // 分配内存存储任务状态
+    pxTaskStatusArray = pvPortMalloc(uxArraySize * sizeof(TaskStatus_t));
+    
+    if (pxTaskStatusArray != NULL) {
+        // 获取任务状态信息
+        uxArraySize = uxTaskGetSystemState(pxTaskStatusArray, uxArraySize, &ulTotalRunTime);
+        
+        // 重置核心运行时间
+        task_runtime_core0 = 0;
+        task_runtime_core1 = 0;
+        
+        // 遍历所有任务，统计各核心的运行时间
+        for (x = 0; x < uxArraySize; x++) {
+            // 根据任务名称判断运行在哪个核心
+            if (strstr(pxTaskStatusArray[x].pcTaskName, "sys_mgmt") != NULL || 
+                strstr(pxTaskStatusArray[x].pcTaskName, "cpu_monitor") != NULL) {
+                task_runtime_core0 += pxTaskStatusArray[x].ulRunTimeCounter;
+            } else if (strstr(pxTaskStatusArray[x].pcTaskName, "hw_ctrl") != NULL) {
+                task_runtime_core1 += pxTaskStatusArray[x].ulRunTimeCounter;
+            }
         }
-
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        
+        vPortFree(pxTaskStatusArray);
     }
-
-    vTaskDelete(NULL);
 }
 
-// 系统初始化任务
-static void system_init_task(void *arg)
+// 更新CPU使用率（基于真实的任务运行时间统计）
+static void update_cpu_usage(void)
 {
-    ESP_LOGI(TAG, "System initialization started");
+    static uint32_t last_runtime_core0 = 0;
+    static uint32_t last_runtime_core1 = 0;
+    static uint32_t last_total_time = 0;
+    
+    uint32_t current_time = xTaskGetTickCount();
+    uint32_t elapsed_ticks = current_time - last_total_time;
+    
+    // 每1秒更新一次
+    if (elapsed_ticks >= pdMS_TO_TICKS(1000)) {
+        get_task_runtime_stats();
+        
+        if (last_total_time > 0) {
+            // 计算每个核心的CPU使用率
+            uint32_t runtime_diff_core0 = task_runtime_core0 - last_runtime_core0;
+            uint32_t runtime_diff_core1 = task_runtime_core1 - last_runtime_core1;
+            
+            // 转换为百分比（假设每个tick为1ms）
+            float usage_core0 = (runtime_diff_core0 * 100.0f) / (elapsed_ticks * portTICK_PERIOD_MS);
+            float usage_core1 = (runtime_diff_core1 * 100.0f) / (elapsed_ticks * portTICK_PERIOD_MS);
+            
+            if (xSemaphoreTake(cpu_usage_mutex, portMAX_DELAY) == pdTRUE) {
+                cpu_usage[0] = usage_core0 > 100.0f ? 100.0f : usage_core0;
+                cpu_usage[1] = usage_core1 > 100.0f ? 100.0f : usage_core1;
+                xSemaphoreGive(cpu_usage_mutex);
+            }
+        }
+        
+        last_runtime_core0 = task_runtime_core0;
+        last_runtime_core1 = task_runtime_core1;
+        last_total_time = current_time;
+    }
+}
+
+// 获取CPU使用率
+void get_cpu_usage(float *core0, float *core1)
+{
+    if (xSemaphoreTake(cpu_usage_mutex, portMAX_DELAY) == pdTRUE) {
+        *core0 = cpu_usage[0];
+        *core1 = cpu_usage[1];
+        xSemaphoreGive(cpu_usage_mutex);
+    }
+}
+
+// CPU使用率监控任务
+static void cpu_monitor_task(void *pvParameters)
+{
+    ESP_LOGI(TAG, "CPU monitor task started on core %d", xPortGetCoreID());
+    
+    // 初始化统计时间
+    last_stat_time = xTaskGetTickCount();
+    
+    while (1) {
+        update_cpu_usage();
+        
+        // 每1秒更新一次
+        float core0, core1;
+        get_cpu_usage(&core0, &core1);
+        
+        ESP_LOGI(TAG, "CPU Usage - Core0: %.1f%%, Core1: %.1f%%", core0, core1);
+        
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+// 系统管理任务（运行在Core 0）
+static void system_management_task(void *arg)
+{
+    ESP_LOGI(TAG, "System management task started on core %d", xPortGetCoreID());
 
     // 初始化文件系统
     esp_err_t ret = littlefs_manager_init();
-    if (ret != ESP_OK)
-    {
+    if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Filesystem initialization failed: %s", esp_err_to_name(ret));
-    }
-    else
-    {
+    } else {
         ESP_LOGI(TAG, "Filesystem initialized successfully");
-
-        // 详细列出LittleFS根目录下的所有文件和文件夹（类似ls -lh）
-        ESP_LOGI(TAG, "=== LittleFS文件系统详细内容 ===");
         littlefs_manager_list_files_detailed("/");
     }
 
     // 初始化用户管理器
     ret = user_manager_init();
-    if (ret != ESP_OK)
-    {
+    if (ret != ESP_OK) {
         ESP_LOGE(TAG, "User manager initialization failed: %s", esp_err_to_name(ret));
-    }
-    else
-    {
+    } else {
         ESP_LOGI(TAG, "User manager initialized successfully");
     }
 
@@ -146,109 +195,156 @@ static void system_init_task(void *arg)
     session_manager_init();
     ESP_LOGI(TAG, "Session manager initialized successfully");
 
-    // 显示当前系统信息
+    // 显示系统信息
     esp_chip_info_t chip_info;
     esp_chip_info(&chip_info);
 
     ESP_LOGI(TAG, "Chip information:");
-    ESP_LOGI(TAG, "  Model: %s",
-             (chip_info.model == CHIP_ESP32S3) ? "ESP32-S3" : "Unknown");
+    ESP_LOGI(TAG, "  Model: %s", (chip_info.model == CHIP_ESP32S3) ? "ESP32-S3" : "Unknown");
     ESP_LOGI(TAG, "  Cores: %d", chip_info.cores);
-    ESP_LOGI(TAG, "  Features: %s%s%s%s",
-             (chip_info.features & CHIP_FEATURE_WIFI_BGN) ? "WiFi " : "",
-             (chip_info.features & CHIP_FEATURE_BLE) ? "BLE " : "",
-             (chip_info.features & CHIP_FEATURE_BT) ? "BT " : "",
-             (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "Embedded-Flash" : "External-Flash");
 
-    ESP_LOGI(TAG, "System initialization completed");
+    // WiFi管理功能
+    ESP_LOGI(TAG, "WiFi manager task started");
 
-    // 创建WiFi管理任务
-    xTaskCreate(wifi_manager_task, "wifi_manager", 8192, NULL, 4, NULL);
+    ret = wifi_manager_init(&wifi_config);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "WiFi manager initialization failed: %s", esp_err_to_name(ret));
+        vTaskDelete(NULL);
+        return;
+    }
 
-    vTaskDelete(NULL);
+    ret = wifi_manager_start_ap("ap_map", wifi_config.ap_ssid, wifi_config.ap_password);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start AP: %s", esp_err_to_name(ret));
+    }
+
+    ret = wifi_manager_start_web_server();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start web server: %s", esp_err_to_name(ret));
+    }
+
+    network_info_t net_info;
+    wifi_manager_get_network_info(&net_info);
+    ESP_LOGI(TAG, "Network Information:");
+    ESP_LOGI(TAG, "  AP IP: %s", net_info.ap_ip);
+
+    // 设备映射初始化
+    ret = device_mapping_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize device mapping: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "Device mapping initialized successfully");
+    }
+
+    // 设备监控循环
+    static uint32_t last_device_check_time = 0;
+    
+    while (1) {
+        uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        
+        // 每60秒检查一次设备状态
+        if (current_time - last_device_check_time > 60000) {
+            device_mapping_refresh_status(30);
+            
+            int device_count = device_mapping_get_count();
+            if (device_count > 0) {
+                ESP_LOGI(TAG, "=== Device Mapping Table (%d devices) ===", device_count);
+                device_mapping_t **devices = device_mapping_get_all_devices(NULL);
+                for (int i = 0; i < device_count; i++) {
+                    ESP_LOGI(TAG, "  %d. Hostname: %s, IP: %s, MAC: %s, Active: %s",
+                             i + 1, devices[i]->hostname, devices[i]->ip, 
+                             devices[i]->mac, devices[i]->is_active ? "Yes" : "No");
+                }
+            }
+            
+            // 每30秒扫描一次连接的设备
+            wifi_manager_scan_connected_devices("ap_map");
+            ESP_LOGI(TAG, "Device scan completed");
+            
+            last_device_check_time = current_time;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
 }
 
-// WS2812自定义配置测试任务
-static void ws2812_custom_test_task(void *pvParameters)
+// 硬件控制任务（运行在Core 1）
+static void hardware_control_task(void *arg)
 {
+    ESP_LOGI(TAG, "Hardware control task started on core %d", xPortGetCoreID());
+
+    // 初始化舵机控制
+    esp_err_t ret = servo_control_init(&servo_config);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Servo control initialization failed: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "Servo control initialized successfully");
+    }
+
+    // 舵机雷达扫描参数
+    static int current_angle = 90;
+    static int target_angle = 90;
+    static int direction = 1;
+    static uint32_t last_servo_move_time = 0;
+    static bool is_moving = false;
+    static uint32_t move_duration = 0;
+
+    const uint32_t min_move_duration = 2000;
+    const uint32_t max_move_duration = 5000;
+
+    // WS2812配置
     ws2812_config_t custom_config = {
         .pin = 48,
-        .num_leds = 1};
+        .num_leds = 1
+    };
 
-    while (1)
-    {
-        // 每次循环开始时初始化WS2812
-        esp_err_t ret = ws2812_led_init(&custom_config);
-        if (ret != ESP_OK)
-        {
-            ESP_LOGE(TAG, "WS2812 initialization failed: %s", esp_err_to_name(ret));
-            vTaskDelay(pdMS_TO_TICKS(5000)); // 等待5秒后重试
-            continue;
+    // LED测试循环
+    while (1) {
+        // WS2812 LED测试
+        ret = ws2812_led_init(&custom_config);
+        if (ret == ESP_OK) {
+            // 简化的LED测试
+            ws2812_set_all_color((rgb_color_t){255, 0, 0}); // 红色
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            ws2812_set_all_color((rgb_color_t){0, 255, 0}); // 绿色
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            ws2812_set_all_color((rgb_color_t){0, 0, 255}); // 蓝色
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            ws2812_clear_all();
+            ws2812_led_deinit();
         }
 
-        ESP_LOGI(TAG, "=== 自定义WS2812测试开始 ===");
-
-        ESP_LOGI(TAG, "阶段1: 单色循环测试");
-
-        // 简化的单色测试，只测试几种基本颜色
-        ret = ws2812_set_all_color((rgb_color_t){255, 0, 0}); // 红色
-        if (ret != ESP_OK)
-        {
-            ESP_LOGE(TAG, "设置红色失败: %s", esp_err_to_name(ret));
-            goto cleanup;
+        // 舵机控制（简化版）
+        if (!is_moving) {
+            // 设置新的目标角度
+            target_angle = (direction == 1) ? 180 : 0;
+            direction = -direction;
+            is_moving = true;
+            last_servo_move_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            move_duration = (min_move_duration + max_move_duration) / 2;
+            
+            // 使用现有的舵机控制函数
+            servo_control_set_angle(target_angle);
+        } else {
+            // 检查移动是否完成
+            uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            if (current_time - last_servo_move_time > move_duration) {
+                is_moving = false;
+                current_angle = target_angle;
+            }
         }
-        vTaskDelay(pdMS_TO_TICKS(2000));
 
-        ret = ws2812_set_all_color((rgb_color_t){0, 255, 0}); // 绿色
-        if (ret != ESP_OK)
-        {
-            ESP_LOGE(TAG, "设置绿色失败: %s", esp_err_to_name(ret));
-            goto cleanup;
-        }
-        vTaskDelay(pdMS_TO_TICKS(2000));
-
-        ret = ws2812_set_all_color((rgb_color_t){0, 0, 255}); // 蓝色
-        if (ret != ESP_OK)
-        {
-            ESP_LOGE(TAG, "设置蓝色失败: %s", esp_err_to_name(ret));
-            goto cleanup;
-        }
-        vTaskDelay(pdMS_TO_TICKS(2000));
-
-        ESP_LOGI(TAG, "阶段2: 呼吸灯效果测试");
-        ret = ws2812_breathing_effect((rgb_color_t){255, 0, 0}, 5);
-        if (ret != ESP_OK)
-        {
-            ESP_LOGE(TAG, "呼吸灯效果失败: %s", esp_err_to_name(ret));
-            goto cleanup;
-        }
-        vTaskDelay(pdMS_TO_TICKS(3000)); // 缩短测试时间
-
-        ESP_LOGI(TAG, "阶段4: 关闭LED");
-        ret = ws2812_clear_all();
-        if (ret != ESP_OK)
-        {
-            ESP_LOGE(TAG, "关闭LED失败: %s", esp_err_to_name(ret));
-        }
-        vTaskDelay(pdMS_TO_TICKS(1000));
-
-    cleanup:
-        // 每次循环结束时清理WS2812资源
-        ws2812_led_deinit();
-
-        ESP_LOGI(TAG, "=== 自定义WS2812测试完成，开始下一轮 ===");
-        vTaskDelay(pdMS_TO_TICKS(2000)); // 等待2秒后开始下一轮
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "ESP32-S3 application started");
+    ESP_LOGI(TAG, "ESP32-S3 dual-core application started");
 
-    // 统一初始化NVS（只调用一次）
+    // 初始化NVS
     esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
-    {
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_LOGI(TAG, "NVS partition needs erase, performing erase operation...");
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
@@ -258,121 +354,31 @@ void app_main(void)
 
     // 初始化频率管理器
     ret = frequency_manager_init(&freq_config);
-    if (ret != ESP_OK)
-    {
+    if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Frequency manager initialization failed: %s", esp_err_to_name(ret));
-    }
-    else
-    {
+    } else {
         ESP_LOGI(TAG, "Frequency manager initialized successfully");
-
-        // 设置频率模式
-        ret = frequency_manager_set_mode(FREQ_MODE_PERFORMANCE);
-        if (ret != ESP_OK)
-        {
-            ESP_LOGE(TAG, "Failed to set frequency mode: %s", esp_err_to_name(ret));
-        }
-        else
-        {
-            ESP_LOGI(TAG, "Frequency mode set to PERFORMANCE");
-        }
+        frequency_manager_set_mode(FREQ_MODE_PERFORMANCE);
     }
 
-    // 初始化舵机控制 - 使用新的配置结构体
-    ret = servo_control_init(&servo_config);
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Servo control initialization failed: %s", esp_err_to_name(ret));
-    }
-    else
-    {
-        ESP_LOGI(TAG, "Servo control initialized successfully");
-
-        // 修复：添加测试控制变量，确保测试只执行一次
-        static bool servo_test_executed = false;
-        if (!servo_test_executed)
-        {
-            // 运行舵机测试（只执行一次）
-            ESP_LOGI(TAG, "Starting one-time servo test...");
-            servo_test_executed = true;
-        }
-        else
-        {
-            ESP_LOGI(TAG, "Servo test already executed, skipping...");
-        }
-    }
-
-    // 创建WS2812自定义配置测试任务
-    //xTaskCreate(ws2812_custom_test_task, "ws2812_custom", 4096, NULL, 3, NULL);
-
-    // 创建系统初始化任务
-    xTaskCreate(system_init_task, "system_init", 4096, NULL, 5, NULL);
-
-    // 等待系统初始化完成
-    vTaskDelay(pdMS_TO_TICKS(2000));
-
-    // 初始化设备映射表
-    ret = device_mapping_init();
-    if (ret != ESP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to initialize device mapping: %s", esp_err_to_name(ret));
+    // 创建CPU使用率互斥锁
+    cpu_usage_mutex = xSemaphoreCreateMutex();
+    if (cpu_usage_mutex == NULL) {
+        ESP_LOGE(TAG, "Failed to create CPU usage mutex");
         return;
     }
-    ESP_LOGI(TAG, "Device mapping initialized successfully");
 
-    // 设备映射相关变量
-    static uint32_t last_device_check_time = 0;
+    // 创建两个核心任务（优先级相同）
+    xTaskCreatePinnedToCore(system_management_task, "sys_mgmt", 8192, NULL, 4, NULL, 0);
+    xTaskCreatePinnedToCore(hardware_control_task, "hw_ctrl", 8192, NULL, 4, NULL, 1);
+    
+    // 创建CPU监控任务（运行在Core 0）
+    xTaskCreatePinnedToCore(cpu_monitor_task, "cpu_monitor", 4096, NULL, 3, NULL, 0);
 
-    // 舵机雷达扫描相关变量 - 使用新的平滑移动API
-    static int current_angle = 90;            // 当前角度
-    static int target_angle = 90;             // 目标角度
-    static int direction = 1;                 // 扫描方向：1表示增加，-1表示减少
-    static uint32_t last_servo_move_time = 0; // 上次舵机移动时间
-    static bool is_moving = false;            // 是否正在移动
-    static uint32_t move_duration = 0;        // 移动持续时间
-
-    // 平滑移动参数
-    const uint32_t min_move_duration = 2000; // 最小移动时间(毫秒) - 增加时间
-    const uint32_t max_move_duration = 5000; // 最大移动时间(毫秒) - 增加时间
-    const float min_acceleration = 0.1;      // 最小加速度（更平滑）
-    const float max_acceleration = 0.3;      // 最大加速度（较平滑）
-
-    while (true)
-    {
-        // 主循环 - 保持系统运行
-        uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        
-        // 每60秒检查一次设备状态
-        if (current_time - last_device_check_time > 60000)
-        {
-            // 刷新设备状态（标记30秒内不活跃的设备）
-            device_mapping_refresh_status(30);
-
-            // 显示当前设备映射表
-            int device_count = device_mapping_get_count();
-            if (device_count > 0)
-            {
-                ESP_LOGI(TAG, "=== Device Mapping Table (%d devices) ===", device_count);
-
-                device_mapping_t **devices = device_mapping_get_all_devices(NULL);
-                for (int i = 0; i < device_count; i++)
-                {
-                    ESP_LOGI(TAG, "  %d. Hostname: %s, IP: %s, MAC: %s, Active: %s",
-                             i + 1,
-                             devices[i]->hostname,
-                             devices[i]->ip,
-                             devices[i]->mac,
-                             devices[i]->is_active ? "Yes" : "No");
-                }
-            }
-            else
-            {
-                ESP_LOGI(TAG, "No devices in mapping table");
-            }
-
-            last_device_check_time = current_time;
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(50)); // 增加延迟，减少CPU占用
+    ESP_LOGI(TAG, "All tasks created successfully");
+    
+    // 主循环保持空闲
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
