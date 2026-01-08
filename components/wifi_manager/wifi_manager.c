@@ -48,6 +48,8 @@ static esp_err_t devices_api_get_handler(httpd_req_t *req);
 static esp_err_t logout_get_handler(httpd_req_t *req);
 static esp_err_t wifi_manager_try_get_device_name(const char *mac, char *hostname, size_t hostname_size);
 static esp_err_t header_too_large_handler(httpd_req_t *req); // 添加431错误处理函数声明
+static esp_err_t favicon_get_handler(httpd_req_t *req);
+static esp_err_t assets_get_handler(httpd_req_t *req);
 
 /**
  * @brief 获取指定AP下连接的设备列表
@@ -321,13 +323,13 @@ static esp_err_t root_get_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-// 修改静态文件服务函数，添加更好的错误处理
+// 优化静态文件服务函数，添加更好的错误处理和缓存
 static esp_err_t serve_file(httpd_req_t *req, const char *file_path, const char *content_type)
 {
     // 检查请求头大小
     size_t header_len = httpd_req_get_hdr_value_len(req, "Cookie");
     if (header_len > 1024)
-    { // 如果Cookie头超过1KB，可能有问题
+    {
         ESP_LOGW(TAG, "Large header detected: %d bytes", header_len);
     }
 
@@ -345,11 +347,19 @@ static esp_err_t serve_file(httpd_req_t *req, const char *file_path, const char 
         return ESP_FAIL;
     }
 
-    char buffer[512];
+    // 设置正确的Content-Type
+    httpd_resp_set_type(req, content_type);
+    
+    // 为静态文件设置缓存头（1小时缓存）
+    if (strstr(content_type, "image") != NULL || 
+        strstr(content_type, "css") != NULL || 
+        strstr(content_type, "javascript") != NULL) {
+        httpd_resp_set_hdr(req, "Cache-Control", "max-age=3600");
+    }
+
+    char buffer[1024]; // 增加缓冲区大小以提高性能
     size_t read_size;
     esp_err_t ret = ESP_OK;
-
-    httpd_resp_set_type(req, content_type);
 
     while ((read_size = fread(buffer, 1, sizeof(buffer), file)) > 0)
     {
@@ -377,6 +387,18 @@ static esp_err_t login_get_handler(httpd_req_t *req)
         if (whitelist_manager_check_mac(client_mac))
         {
             ESP_LOGI(TAG, "Client MAC %s is in whitelist, redirecting to dashboard", client_mac);
+
+            // 为白名单设备自动创建会话
+            char session_id[64] = {0};
+            if (create_session("whitelist_user", session_id, sizeof(session_id)) == ESP_OK)
+            {
+                // 设置会话cookie
+                char cookie[128];
+                snprintf(cookie, sizeof(cookie), "session_id=%s; Path=/; HttpOnly", session_id);
+                httpd_resp_set_hdr(req, "Set-Cookie", cookie);
+                ESP_LOGI(TAG, "Auto-created session for whitelist device %s", client_mac);
+            }
+
             httpd_resp_set_status(req, "302 Found");
             httpd_resp_set_hdr(req, "Location", "/dashboard");
             httpd_resp_send(req, NULL, 0);
@@ -494,6 +516,53 @@ static esp_err_t js_get_handler(httpd_req_t *req)
     return serve_file(req, "web_pages/js/common.js", "application/javascript");
 }
 
+// favicon.ico文件处理函数
+static esp_err_t favicon_get_handler(httpd_req_t *req)
+{
+    return serve_file(req, "web_pages/assets/favicon.ico", "image/x-icon");
+}
+
+// 通用静态资源处理函数
+static esp_err_t assets_get_handler(httpd_req_t *req)
+{
+    // 从URI中提取文件名
+    const char *uri = req->uri;
+    const char *filename = uri + 1; // 跳过开头的'/'
+
+    // 构建文件路径
+    char filepath[128];
+    snprintf(filepath, sizeof(filepath), "web_pages/assets/%s", filename);
+
+    // 根据文件扩展名设置MIME类型
+    const char *content_type = "application/octet-stream";
+    const char *ext = strrchr(filename, '.');
+    if (ext)
+    {
+        if (strcmp(ext, ".ico") == 0)
+            content_type = "image/x-icon";
+        else if (strcmp(ext, ".png") == 0)
+            content_type = "image/png";
+        else if (strcmp(ext, ".jpg") == 0 || strcmp(ext, ".jpeg") == 0)
+            content_type = "image/jpeg";
+        else if (strcmp(ext, ".gif") == 0)
+            content_type = "image/gif";
+        else if (strcmp(ext, ".svg") == 0)
+            content_type = "image/svg+xml";
+        else if (strcmp(ext, ".css") == 0)
+            content_type = "text/css";
+        else if (strcmp(ext, ".js") == 0)
+            content_type = "application/javascript";
+        else if (strcmp(ext, ".json") == 0)
+            content_type = "application/json";
+        else if (strcmp(ext, ".html") == 0)
+            content_type = "text/html";
+        else if (strcmp(ext, ".txt") == 0)
+            content_type = "text/plain";
+    }
+
+    return serve_file(req, filepath, content_type);
+}
+
 // 删除第一个错误的get_client_mac_address函数定义
 // 保留第二个正确的函数定义（在1139行附近）
 
@@ -581,6 +650,7 @@ static const httpd_uri_t login_post = {
     .method = HTTP_POST,
     .handler = login_post_handler,
     .user_ctx = NULL};
+
 static const httpd_uri_t dashboard = {
     .uri = "/dashboard",
     .method = HTTP_GET,
@@ -621,6 +691,20 @@ static const httpd_uri_t js = {
     .uri = "/common.js",
     .method = HTTP_GET,
     .handler = js_get_handler,
+    .user_ctx = NULL};
+
+// favicon.ico URI配置
+static const httpd_uri_t favicon = {
+    .uri = "/favicon.ico",
+    .method = HTTP_GET,
+    .handler = favicon_get_handler,
+    .user_ctx = NULL};
+
+// 静态资源URI配置（通配符处理）
+static const httpd_uri_t assets = {
+    .uri = "/assets/*",
+    .method = HTTP_GET,
+    .handler = assets_get_handler,
     .user_ctx = NULL};
 
 // 用户管理API处理函数
@@ -968,7 +1052,7 @@ static esp_err_t logout_get_handler(httpd_req_t *req)
 // 用户管理API URI配置
 static const httpd_uri_t users_api_get = {
     .uri = "/api/users",
-    .method = HTTP_GET,
+.method = HTTP_GET,
     .handler = users_api_get_handler,
     .user_ctx = NULL};
 
@@ -1272,7 +1356,7 @@ esp_err_t wifi_manager_start_web_server(void)
     config.send_wait_timeout = 10; // 发送超时时间（秒）
     config.max_uri_handlers = 20;  // 最大URI处理器数量
     config.max_resp_headers = 20;  // 最大响应头数量
-    config.stack_size = 8192;      // 堆栈大小
+    config.stack_size = 8 * 1024;  // 增加堆栈大小到8KB
 
     // 设置更大的缓冲区来处理大请求头
     config.max_open_sockets = 7;    // 最大打开套接字数
@@ -1293,6 +1377,10 @@ esp_err_t wifi_manager_start_web_server(void)
         httpd_register_uri_handler(g_wifi_manager.server, &css);
         httpd_register_uri_handler(g_wifi_manager.server, &js);
 
+        // 注册新的静态资源URI处理器
+        httpd_register_uri_handler(g_wifi_manager.server, &favicon);
+        httpd_register_uri_handler(g_wifi_manager.server, &assets);
+
         // 注册新的API URI处理器
         httpd_register_uri_handler(g_wifi_manager.server, &users_api_get);
         httpd_register_uri_handler(g_wifi_manager.server, &users_api_post);
@@ -1306,7 +1394,7 @@ esp_err_t wifi_manager_start_web_server(void)
         // 注册431错误处理URI处理器
         httpd_register_uri_handler(g_wifi_manager.server, &header_too_large);
 
-        ESP_LOGI(TAG, "Web server started on port 80 with full backend support");
+        ESP_LOGI(TAG, "Web server started on port 80 with full backend support and static assets handling");
     }
 
     return ret;

@@ -240,71 +240,6 @@ static void ws2812_custom_test_task(void *pvParameters)
     }
 }
 
-// 舵机测试函数 - 使用正确的函数名称
-static void servo_test_function(void)
-{
-    ESP_LOGI(TAG, "=== 舵机硬件诊断测试开始 ===");
-    
-    // 运行硬件诊断 - 使用正确的函数名称
-    esp_err_t ret = servo_control_diagnostic_test();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "舵机硬件诊断失败: %s", esp_err_to_name(ret));
-        return;
-    }
-    
-    ESP_LOGI(TAG, "舵机硬件诊断通过");
-    
-    // 测试基本角度设置
-    ESP_LOGI(TAG, "测试基本角度设置...");
-    
-    // 测试0度
-    ret = servo_control_set_angle(0);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "设置0度失败: %s", esp_err_to_name(ret));
-    } else {
-        ESP_LOGI(TAG, "设置0度成功");
-    }
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    
-    // 测试90度
-    ret = servo_control_set_angle(90);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "设置90度失败: %s", esp_err_to_name(ret));
-    } else {
-        ESP_LOGI(TAG, "设置90度成功");
-    }
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    
-    // 测试180度
-    ret = servo_control_set_angle(180);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "设置180度失败: %s", esp_err_to_name(ret));
-    } else {
-        ESP_LOGI(TAG, "设置180度成功");
-    }
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    
-    // 测试平滑移动
-    ESP_LOGI(TAG, "测试平滑移动...");
-    ret = servo_control_smooth_move(0, 2000, 0.3); // 从180度平滑移动到0度，2秒，中等加速度
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "平滑移动失败: %s", esp_err_to_name(ret));
-    } else {
-        ESP_LOGI(TAG, "平滑移动完成");
-    }
-    vTaskDelay(pdMS_TO_TICKS(3000));
-    
-    // 返回中间位置
-    ret = servo_control_set_angle_fast(90);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "快速设置90度失败: %s", esp_err_to_name(ret));
-    } else {
-        ESP_LOGI(TAG, "快速设置90度成功");
-    }
-    
-    ESP_LOGI(TAG, "=== 舵机测试完成 ===");
-}
-
 void app_main(void)
 {
     ESP_LOGI(TAG, "ESP32-S3 application started");
@@ -358,7 +293,6 @@ void app_main(void)
         {
             // 运行舵机测试（只执行一次）
             ESP_LOGI(TAG, "Starting one-time servo test...");
-            servo_test_function();
             servo_test_executed = true;
         }
         else

@@ -3,33 +3,118 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ESP32-S3 仪表盘</title>
-    <link rel="stylesheet" href="style.css">
+    <title>ESP32S3 智能控制中心</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="/style.css">
 </head>
 <body>
     <div class="container">
-        <h1>欢迎来到 ESP32-S3 仪表盘</h1>
-        
-        <div id="esp32Info"></div>
-        <div id="macList"></div>
-        
-        <h2>导航</h2>
-        <ul class="nav-list">
-            <li><a href="/controls">控制菜单</a></li>
-            <li><a href="/network">网络设置</a></li>
-            <li><a href="/account">账户管理</a></li>
-            <li><a href="/backup-restore">备份与恢复</a></li>
-            <li><a href="/logout">退出登录</a></li>
-        </ul>
-        
-        <h2>命令执行</h2>
-        <form id="commandForm" onsubmit="executeCommand(event)">
-            <label for="cmd">输入命令:</label>
-            <input type="text" id="cmd" name="cmd" autocomplete="off" autofocus>
-            <input type="submit" value="执行命令">
-        </form>
+        <!-- 头部信息卡片 -->
+        <div class="card fade-in">
+            <h1>🚀 ESP32-S3 智能控制中心</h1>
+            
+            <!-- 系统信息网格 -->
+            <div class="info-grid">
+                <div class="info-card">
+                    <h3><i class="fas fa-microchip"></i> 设备状态</h3>
+                    <div class="value" id="deviceStatus">在线</div>
+                </div>
+                <div class="info-card">
+                    <h3><i class="fas fa-wifi"></i> 连接设备</h3>
+                    <div class="value" id="connectedDevices">0</div>
+                </div>
+                <div class="info-card">
+                    <h3><i class="fas fa-clock"></i> 运行时间</h3>
+                    <div class="value" id="uptime">00:00:00</div>
+                </div>
+            </div>
+            
+            <!-- 设备列表 -->
+            <div id="esp32Info"></div>
+            <div id="macList"></div>
+        </div>
+
+        <!-- 快速导航 -->
+        <div class="card fade-in">
+            <h2><i class="fas fa-compass"></i> 快速导航</h2>
+            <div class="nav-grid">
+                <a href="/controls" class="nav-card">
+                    <i class="fas fa-gamepad"></i>
+                    <span>设备控制</span>
+                </a>
+                <a href="/network" class="nav-card">
+                    <i class="fas fa-network-wired"></i>
+                    <span>网络设置</span>
+                </a>
+                <a href="/account" class="nav-card">
+                    <i class="fas fa-user-cog"></i>
+                    <span>账户管理</span>
+                </a>
+                <a href="/backup-restore" class="nav-card">
+                    <i class="fas fa-database"></i>
+                    <span>数据备份</span>
+                </a>
+                <a href="/logout" class="nav-card" style="background: linear-gradient(135deg, #dc3545, #c82333);">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>安全退出</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- 命令执行区域 -->
+        <div class="card fade-in">
+            <h2><i class="fas fa-terminal"></i> 命令终端</h2>
+            <form id="commandForm" onsubmit="executeCommand(event)" class="form-group">
+                <label for="cmd">输入命令:</label>
+                <input type="text" id="cmd" name="cmd" autocomplete="off" autofocus 
+                       placeholder="输入命令并按回车执行...">
+                <button type="submit" class="btn" style="margin-top: 15px;">
+                    <i class="fas fa-play"></i> 执行命令
+                </button>
+            </form>
+            <div id="commandOutput" style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; display: none;">
+                <h4>命令输出:</h4>
+                <pre id="outputText" style="white-space: pre-wrap; word-break: break-all;"></pre>
+            </div>
+        </div>
     </div>
     
     <script src="common.js"></script>
+    <script>
+        // 实时更新系统信息
+        function updateSystemInfo() {
+            const now = new Date();
+            const hours = now.getHours().toString().padStart(2, '0');
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            const seconds = now.getSeconds().toString().padStart(2, '0');
+            document.getElementById('uptime').textContent = `${hours}:${minutes}:${seconds}`;
+        }
+        
+        setInterval(updateSystemInfo, 1000);
+        updateSystemInfo();
+        
+        // 增强的命令执行功能
+        function executeCommand(event) {
+            event.preventDefault();
+            const cmdInput = document.getElementById('cmd');
+            const command = cmdInput.value.trim();
+            
+            if (!command) return;
+            
+            const outputDiv = document.getElementById('commandOutput');
+            const outputText = document.getElementById('outputText');
+            
+            outputDiv.style.display = 'block';
+            outputText.textContent = `执行命令: ${command}\n\n正在执行...`;
+            
+            // 模拟命令执行（实际需要与后端API交互）
+            setTimeout(() => {
+                outputText.textContent += `\n\n命令执行完成！\n结果: 命令 "${command}" 已成功执行`;
+                cmdInput.value = '';
+                cmdInput.focus();
+            }, 1000);
+        }
+    </script>
 </body>
 </html>

@@ -4,6 +4,8 @@
 #include "nvs.h"
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include "cJSON.h"
 
 static const char *TAG = "WhitelistManager";
 
@@ -13,8 +15,7 @@ static int g_whitelist_count = 0;
 
 // 默认白名单MAC地址（示例）
 static const char* DEFAULT_WHITELIST_MACS[] = {
-    "AA:BB:CC:11:22:33",
-    "DD:EE:FF:44:55:66"
+    "00:00:00:00:00:00"
 };
 
 static const int DEFAULT_WHITELIST_COUNT = 2;
@@ -24,48 +25,194 @@ static const char* NVS_NAMESPACE = "whitelist";
 static const char* NVS_KEY_COUNT = "count";
 static const char* NVS_KEY_PREFIX = "mac_";
 
+// 从文件系统加载白名单
+static esp_err_t whitelist_manager_load_from_filesystem(void) {
+    ESP_LOGI(TAG, "Attempting to load whitelist from filesystem");
+    
+    FILE* file = fopen("/littlefs/config/whitelist.json", "r");
+    if (!file) {
+        ESP_LOGW(TAG, "Failed to open whitelist.json file");
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    // 获取文件大小
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    if (file_size <= 0) {
+        fclose(file);
+        ESP_LOGW(TAG, "Whitelist.json file is empty");
+        return ESP_ERR_INVALID_SIZE;
+    }
+    
+    // 读取文件内容
+    char* file_content = malloc(file_size + 1);
+    if (!file_content) {
+        fclose(file);
+        ESP_LOGE(TAG, "Failed to allocate memory for file content");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    size_t bytes_read = fread(file_content, 1, file_size, file);
+    fclose(file);
+    
+    if (bytes_read != file_size) {
+        free(file_content);
+        ESP_LOGE(TAG, "Failed to read whitelist.json file");
+        return ESP_ERR_INVALID_SIZE;
+    }
+    
+    file_content[file_size] = '\0';
+    
+    // 解析JSON
+    cJSON* root = cJSON_Parse(file_content);
+    free(file_content);
+    
+    if (!root) {
+        ESP_LOGE(TAG, "Failed to parse whitelist.json as JSON");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    cJSON* macs_array = cJSON_GetObjectItem(root, "macs");
+    if (!macs_array || !cJSON_IsArray(macs_array)) {
+        cJSON_Delete(root);
+        ESP_LOGE(TAG, "Invalid whitelist.json format: missing or invalid 'macs' array");
+        return ESP_ERR_INVALID_ARG;
+    }
+    
+    int mac_count = cJSON_GetArraySize(macs_array);
+    if (mac_count <= 0) {
+        cJSON_Delete(root);
+        ESP_LOGW(TAG, "Whitelist.json contains no MAC addresses");
+        return ESP_ERR_NOT_FOUND;
+    }
+    
+    // 清理现有的白名单
+    if (g_whitelist_macs) {
+        for (int i = 0; i < g_whitelist_count; i++) {
+            free(g_whitelist_macs[i]);
+        }
+        free(g_whitelist_macs);
+        g_whitelist_macs = NULL;
+        g_whitelist_count = 0;
+    }
+    
+    // 分配内存
+    g_whitelist_macs = malloc(sizeof(whitelist_mac_t*) * mac_count);
+    if (!g_whitelist_macs) {
+        cJSON_Delete(root);
+        ESP_LOGE(TAG, "Failed to allocate memory for whitelist");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    g_whitelist_count = mac_count;
+    
+    // 解析每个MAC地址
+    for (int i = 0; i < mac_count; i++) {
+        cJSON* mac_obj = cJSON_GetArrayItem(macs_array, i);
+        if (!mac_obj) {
+            ESP_LOGE(TAG, "Failed to get MAC object at index %d", i);
+            continue;
+        }
+        
+        g_whitelist_macs[i] = malloc(sizeof(whitelist_mac_t));
+        if (!g_whitelist_macs[i]) {
+            ESP_LOGE(TAG, "Failed to allocate memory for whitelist entry %d", i);
+            continue;
+        }
+        
+        // 获取MAC地址
+        cJSON* mac_item = cJSON_GetObjectItem(mac_obj, "mac");
+        if (mac_item && cJSON_IsString(mac_item)) {
+            strncpy(g_whitelist_macs[i]->mac, mac_item->valuestring, 
+                    sizeof(g_whitelist_macs[i]->mac) - 1);
+            g_whitelist_macs[i]->mac[sizeof(g_whitelist_macs[i]->mac) - 1] = '\0';
+        } else {
+            strncpy(g_whitelist_macs[i]->mac, "00:00:00:00:00:00", 
+                    sizeof(g_whitelist_macs[i]->mac) - 1);
+        }
+        
+        // 获取描述
+        cJSON* desc_item = cJSON_GetObjectItem(mac_obj, "description");
+        if (desc_item && cJSON_IsString(desc_item)) {
+            strncpy(g_whitelist_macs[i]->description, desc_item->valuestring,
+                    sizeof(g_whitelist_macs[i]->description) - 1);
+        } else {
+            strncpy(g_whitelist_macs[i]->description, "Loaded from filesystem",
+                    sizeof(g_whitelist_macs[i]->description) - 1);
+        }
+        g_whitelist_macs[i]->description[sizeof(g_whitelist_macs[i]->description) - 1] = '\0';
+        
+        ESP_LOGI(TAG, "Loaded MAC from filesystem: %s - %s", 
+                 g_whitelist_macs[i]->mac, g_whitelist_macs[i]->description);
+    }
+    
+    cJSON_Delete(root);
+    ESP_LOGI(TAG, "Successfully loaded %d MAC addresses from filesystem", g_whitelist_count);
+    
+    // 保存到NVS作为备份
+    whitelist_manager_save_macs();
+    
+    return ESP_OK;
+}
+
 // 初始化白名单管理器
 esp_err_t whitelist_manager_init(void) {
     ESP_LOGI(TAG, "Initializing whitelist manager");
     
-    // 从NVS加载白名单
-    esp_err_t ret = whitelist_manager_load_macs();
-    if (ret != ESP_OK) {
-        ESP_LOGI(TAG, "Failed to load whitelist from NVS, using default whitelist");
-        
-        // 使用默认白名单
-        g_whitelist_count = DEFAULT_WHITELIST_COUNT;
-        g_whitelist_macs = malloc(sizeof(whitelist_mac_t*) * g_whitelist_count);
-        
-        if (!g_whitelist_macs) {
-            ESP_LOGE(TAG, "Failed to allocate memory for whitelist");
+    // 首先尝试从文件系统加载
+    esp_err_t fs_ret = whitelist_manager_load_from_filesystem();
+    if (fs_ret == ESP_OK) {
+        ESP_LOGI(TAG, "Whitelist loaded successfully from filesystem");
+        return ESP_OK;
+    }
+    
+    ESP_LOGW(TAG, "Failed to load whitelist from filesystem: %s, trying NVS", 
+             esp_err_to_name(fs_ret));
+    
+    // 如果文件系统加载失败，尝试从NVS加载
+    esp_err_t nvs_ret = whitelist_manager_load_macs();
+    if (nvs_ret == ESP_OK) {
+        ESP_LOGI(TAG, "Whitelist loaded successfully from NVS");
+        return ESP_OK;
+    }
+    
+    ESP_LOGW(TAG, "Failed to load whitelist from NVS: %s, using default whitelist", 
+             esp_err_to_name(nvs_ret));
+    
+    // 如果NVS也失败，使用默认白名单
+    g_whitelist_count = DEFAULT_WHITELIST_COUNT;
+    g_whitelist_macs = malloc(sizeof(whitelist_mac_t*) * g_whitelist_count);
+    
+    if (!g_whitelist_macs) {
+        ESP_LOGE(TAG, "Failed to allocate memory for whitelist");
+        return ESP_ERR_NO_MEM;
+    }
+    
+    for (int i = 0; i < g_whitelist_count; i++) {
+        g_whitelist_macs[i] = malloc(sizeof(whitelist_mac_t));
+        if (!g_whitelist_macs[i]) {
+            ESP_LOGE(TAG, "Failed to allocate memory for whitelist entry");
+            // 清理已分配的内存
+            for (int j = 0; j < i; j++) {
+                free(g_whitelist_macs[j]);
+            }
+            free(g_whitelist_macs);
+            g_whitelist_macs = NULL;
             return ESP_ERR_NO_MEM;
         }
         
-        for (int i = 0; i < g_whitelist_count; i++) {
-            g_whitelist_macs[i] = malloc(sizeof(whitelist_mac_t));
-            if (!g_whitelist_macs[i]) {
-                ESP_LOGE(TAG, "Failed to allocate memory for whitelist entry");
-                // 清理已分配的内存
-                for (int j = 0; j < i; j++) {
-                    free(g_whitelist_macs[j]);
-                }
-                free(g_whitelist_macs);
-                g_whitelist_macs = NULL;
-                return ESP_ERR_NO_MEM;
-            }
-            
-            strncpy(g_whitelist_macs[i]->mac, DEFAULT_WHITELIST_MACS[i], sizeof(g_whitelist_macs[i]->mac) - 1);
-            g_whitelist_macs[i]->mac[sizeof(g_whitelist_macs[i]->mac) - 1] = '\0';
-            snprintf(g_whitelist_macs[i]->description, sizeof(g_whitelist_macs[i]->description), 
-                     "Default whitelist entry %d", i + 1);
-        }
-        
-        // 保存默认白名单到NVS
-        whitelist_manager_save_macs();
+        strncpy(g_whitelist_macs[i]->mac, DEFAULT_WHITELIST_MACS[i], sizeof(g_whitelist_macs[i]->mac) - 1);
+        g_whitelist_macs[i]->mac[sizeof(g_whitelist_macs[i]->mac) - 1] = '\0';
+        snprintf(g_whitelist_macs[i]->description, sizeof(g_whitelist_macs[i]->description), 
+                 "Default whitelist entry %d", i + 1);
     }
     
-    ESP_LOGI(TAG, "Whitelist manager initialized with %d entries", g_whitelist_count);
+    // 保存默认白名单到NVS
+    whitelist_manager_save_macs();
+    
+    ESP_LOGI(TAG, "Whitelist manager initialized with %d default entries", g_whitelist_count);
     return ESP_OK;
 }
 

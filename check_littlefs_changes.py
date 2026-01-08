@@ -38,7 +38,13 @@ def calculate_directory_hash(directory_path):
 
 def save_hash_to_file(hash_value, hash_file_path):
     """保存哈希值到文件"""
+    if not hash_file_path:
+        print("错误: 哈希文件路径为空")
+        return False
+        
     try:
+        # 确保目录存在
+        os.makedirs(os.path.dirname(hash_file_path), exist_ok=True)
         with open(hash_file_path, 'w') as f:
             json.dump({'hash': hash_value}, f)
         return True
