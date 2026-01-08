@@ -3,6 +3,7 @@
 
 #include "esp_err.h"
 #include "driver/ledc.h"
+#include "driver/gpio.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,9 +21,17 @@ extern "C" {
 #define SERVO_MIN_ANGLE     0           /*!< 最小角度0度 */
 #define SERVO_MAX_ANGLE     180         /*!< 最大角度180度 */
 
-// 脉宽范围（微秒）
+// 脉宽范围（微秒）- 统一为标准范围
 #define SERVO_MIN_PULSEWIDTH 500        /*!< 0度对应脉宽500us */
 #define SERVO_MAX_PULSEWIDTH 2500       /*!< 180度对应脉宽2500us */
+
+// 舵机状态枚举
+typedef enum {
+    SERVO_STATE_UNINITIALIZED = 0,  /*!< 未初始化 */
+    SERVO_STATE_READY,              /*!< 就绪状态 */
+    SERVO_STATE_MOVING,             /*!< 正在移动 */
+    SERVO_STATE_ERROR               /*!< 错误状态 */
+} servo_state_t;
 
 /**
  * @brief 舵机控制配置结构体
@@ -37,6 +46,17 @@ typedef struct {
     int min_pulsewidth;         /*!< 最小脉宽(微秒) */
     int max_pulsewidth;         /*!< 最大脉宽(微秒) */
 } servo_config_t;
+
+/**
+ * @brief 舵机状态信息结构体
+ */
+typedef struct {
+    servo_state_t state;        /*!< 当前状态 */
+    int current_angle;          /*!< 当前角度 */
+    int target_angle;           /*!< 目标角度 */
+    uint32_t last_update_time;  /*!< 最后更新时间 */
+    esp_err_t last_error;       /*!< 最后错误码 */
+} servo_status_t;
 
 /**
  * @brief 初始化舵机控制
@@ -60,6 +80,14 @@ esp_err_t servo_control_set_angle(int angle);
  * @return int 当前角度值
  */
 int servo_control_get_angle(void);
+
+/**
+ * @brief 获取舵机状态信息
+ * 
+ * @param status 状态信息结构体指针
+ * @return esp_err_t ESP_OK表示成功，其他表示失败
+ */
+esp_err_t servo_control_get_status(servo_status_t *status);
 
 /**
  * @brief 舵机测试函数，从0度转到180度再转回0度
@@ -91,6 +119,21 @@ esp_err_t servo_control_smooth_move(int target_angle, int duration_ms, float acc
  * @return esp_err_t ESP_OK表示成功，其他表示失败
  */
 esp_err_t servo_control_smooth_test(void);
+
+/**
+ * @brief 舵机硬件诊断测试
+ * 
+ * @return esp_err_t ESP_OK表示成功，其他表示失败
+ */
+esp_err_t servo_control_diagnostic_test(void);
+
+/**
+ * @brief 快速设置舵机角度（跳过平滑移动）
+ * 
+ * @param angle 目标角度(0-180度)
+ * @return esp_err_t ESP_OK表示成功，其他表示失败
+ */
+esp_err_t servo_control_set_angle_fast(int angle);
 
 #ifdef __cplusplus
 }

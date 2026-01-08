@@ -25,6 +25,18 @@
 
 static const char *TAG = "Main";
 
+// 舵机配置 - 使用正确的常量名称
+static servo_config_t servo_config = {
+    .pin = SERVO_PIN,           // GPIO38
+    .channel = SERVO_CHANNEL,   // LEDC通道0
+    .timer = SERVO_TIMER,       // LEDC定时器0
+    .speed_mode = SERVO_SPEED_MODE, // LEDC速度模式
+    .frequency = SERVO_FREQUENCY,   // 50Hz
+    .resolution = SERVO_RESOLUTION, // 12位分辨率
+    .min_pulsewidth = SERVO_MIN_PULSEWIDTH, // 500us
+    .max_pulsewidth = SERVO_MAX_PULSEWIDTH  // 2500us
+};
+
 // 频率管理器配置
 static frequency_manager_config_t freq_config = {
     .current_mode = FREQ_MODE_BALANCED,
@@ -228,6 +240,71 @@ static void ws2812_custom_test_task(void *pvParameters)
     }
 }
 
+// 舵机测试函数 - 使用正确的函数名称
+static void servo_test_function(void)
+{
+    ESP_LOGI(TAG, "=== 舵机硬件诊断测试开始 ===");
+    
+    // 运行硬件诊断 - 使用正确的函数名称
+    esp_err_t ret = servo_control_diagnostic_test();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "舵机硬件诊断失败: %s", esp_err_to_name(ret));
+        return;
+    }
+    
+    ESP_LOGI(TAG, "舵机硬件诊断通过");
+    
+    // 测试基本角度设置
+    ESP_LOGI(TAG, "测试基本角度设置...");
+    
+    // 测试0度
+    ret = servo_control_set_angle(0);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "设置0度失败: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "设置0度成功");
+    }
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    
+    // 测试90度
+    ret = servo_control_set_angle(90);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "设置90度失败: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "设置90度成功");
+    }
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    
+    // 测试180度
+    ret = servo_control_set_angle(180);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "设置180度失败: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "设置180度成功");
+    }
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    
+    // 测试平滑移动
+    ESP_LOGI(TAG, "测试平滑移动...");
+    ret = servo_control_smooth_move(0, 2000, 0.3); // 从180度平滑移动到0度，2秒，中等加速度
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "平滑移动失败: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "平滑移动完成");
+    }
+    vTaskDelay(pdMS_TO_TICKS(3000));
+    
+    // 返回中间位置
+    ret = servo_control_set_angle_fast(90);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "快速设置90度失败: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "快速设置90度成功");
+    }
+    
+    ESP_LOGI(TAG, "=== 舵机测试完成 ===");
+}
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "ESP32-S3 application started");
@@ -265,8 +342,8 @@ void app_main(void)
         }
     }
 
-    // 初始化舵机控制
-    ret = servo_control_init(NULL); // 使用默认配置
+    // 初始化舵机控制 - 使用新的配置结构体
+    ret = servo_control_init(&servo_config);
     if (ret != ESP_OK)
     {
         ESP_LOGE(TAG, "Servo control initialization failed: %s", esp_err_to_name(ret));
@@ -281,15 +358,7 @@ void app_main(void)
         {
             // 运行舵机测试（只执行一次）
             ESP_LOGI(TAG, "Starting one-time servo test...");
-            ret = servo_control_test();
-            if (ret != ESP_OK)
-            {
-                ESP_LOGE(TAG, "Servo control test failed: %s", esp_err_to_name(ret));
-            }
-            else
-            {
-                ESP_LOGI(TAG, "Servo control test completed");
-            }
+            servo_test_function();
             servo_test_executed = true;
         }
         else
@@ -299,7 +368,7 @@ void app_main(void)
     }
 
     // 创建WS2812自定义配置测试任务
-    xTaskCreate(ws2812_custom_test_task, "ws2812_custom", 4096, NULL, 3, NULL);
+    //xTaskCreate(ws2812_custom_test_task, "ws2812_custom", 4096, NULL, 3, NULL);
 
     // 创建系统初始化任务
     xTaskCreate(system_init_task, "system_init", 4096, NULL, 5, NULL);
@@ -319,7 +388,7 @@ void app_main(void)
     // 设备映射相关变量
     static uint32_t last_device_check_time = 0;
 
-    // 舵机雷达扫描相关变量 - 使用平滑移动
+    // 舵机雷达扫描相关变量 - 使用新的平滑移动API
     static int current_angle = 90;            // 当前角度
     static int target_angle = 90;             // 目标角度
     static int direction = 1;                 // 扫描方向：1表示增加，-1表示减少
@@ -328,16 +397,16 @@ void app_main(void)
     static uint32_t move_duration = 0;        // 移动持续时间
 
     // 平滑移动参数
-    const uint32_t min_move_duration = 1000; // 最小移动时间(毫秒)
-    const uint32_t max_move_duration = 3000; // 最大移动时间(毫秒)
-    const float min_acceleration = 0.2;      // 最小加速度（更平滑）
-    const float max_acceleration = 0.5;      // 最大加速度（较陡峭）
+    const uint32_t min_move_duration = 2000; // 最小移动时间(毫秒) - 增加时间
+    const uint32_t max_move_duration = 5000; // 最大移动时间(毫秒) - 增加时间
+    const float min_acceleration = 0.1;      // 最小加速度（更平滑）
+    const float max_acceleration = 0.3;      // 最大加速度（较平滑）
 
     while (true)
     {
         // 主循环 - 保持系统运行
         uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
-
+        
         // 每60秒检查一次设备状态
         if (current_time - last_device_check_time > 60000)
         {
