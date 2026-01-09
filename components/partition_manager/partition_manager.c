@@ -69,8 +69,7 @@ void partition_manager_list_partitions(void) {
 
 double partition_manager_get_cpu_frequency(void) {
     // 使用esp_rom_get_cpu_ticks_per_us()来获取CPU频率
-    // 这个函数返回每微秒的时钟周期数，乘以1000000得到Hz，再除以1000000得到MHz
-    return (double)esp_rom_get_cpu_ticks_per_us() * 1000000.0 / 1000000.0;
+    return (double)esp_rom_get_cpu_ticks_per_us();
 }
 
 esp_err_t partition_manager_set_cpu_frequency(int freq_mhz) {

@@ -1,5 +1,5 @@
 .vscode/*
 .devcontainer/*
-esp32s3（果云版）.ino
+*.ino
 sdkconfig.old
 build/*

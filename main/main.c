@@ -3,9 +3,12 @@
  *
  * SPDX-License-Identifier: CC0-1.0
  * 
+ * 作者：wuming
+ * 创建时间：2025-10-1
  */
 
 #include <stdio.h>
+
 #include <inttypes.h>
 #include <dirent.h>
 #include "sdkconfig.h"
@@ -37,12 +40,12 @@ static float cpu_usage[2] = {0.0f, 0.0f};
 #define PERF_COUNTER_CORE0 0  // 性能计数器0监控Core0
 #define PERF_COUNTER_CORE1 1  // 性能计数器1监控Core1
 static const uint16_t select_value = XTPERF_CNT_CYCLES;  // 关键：监控CPU时钟周期总数
-static const uint32_t mask_value = 0;     // 掩码值
-static const uint32_t kernelcnt_value = 1; // 内核计数
+static const uint32_t mask_value = XTPERF_MASK_CYCLES;     // 掩码值
+static const uint32_t kernelcnt_value = 0; // 内核计数
 static const uint32_t tracelevel_value = 0; // 跟踪级别
-// 性能监控相关变量 - 每个核心独立
-static uint32_t last_cycle_count_core0 = 0;
-static uint32_t last_cycle_count_core1 = 0;
+
+TaskHandle_t runtime_0_task_handle = NULL;
+TaskHandle_t runtime_1_task_handle = NULL;
 
 uint32_t millis() {
     return esp_timer_get_time() / 1000;
@@ -62,11 +65,11 @@ static servo_config_t servo_config = {
 
 // 频率管理器配置
 static frequency_manager_config_t freq_config = {
-    .current_mode = FREQ_MODE_BALANCED,
+    .current_mode = FREQ_MODE_PERFORMANCE,     // FREQ_MODE_BALANCED
     .performance_freq = 240,
     .balanced_freq = 160,
     .power_save_freq = 80,
-    .custom_freq = 240};
+    .custom_freq = 200};
 
 // WiFi配置
 static wifi_manager_config_t wifi_config = {
@@ -80,7 +83,6 @@ static wifi_manager_config_t wifi_config = {
 // Core 0性能监控任务
 static void core0_perfmon_task(void *arg) {
     ESP_LOGI(TAG, "Core0 performance monitoring task started");
-
     // 初始化性能监视 - Core 0（使用变量而非硬编码）
     esp_err_t xtensa_perfmon_result = xtensa_perfmon_init(PERF_COUNTER_CORE0, select_value, mask_value, kernelcnt_value, tracelevel_value);
     if (xtensa_perfmon_result == ESP_OK) {
@@ -89,7 +91,11 @@ static void core0_perfmon_task(void *arg) {
         ESP_LOGE(TAG, "Failed to init perfmon counter for core 0: %s", esp_err_to_name(xtensa_perfmon_result));
         return;
     }
-
+    
+    // 添加基准值记录
+    static uint32_t last_perf_counter_value_core0 = 0;
+    bool first_reading = true;
+    
     // 定时器变量 - 统一使用millis()
     unsigned long previousMillis_1 = millis();  // 1秒间隔
     const long interval_1 = 1 * 1000;     // 1秒间隔时间（毫秒）
@@ -101,16 +107,35 @@ static void core0_perfmon_task(void *arg) {
         if (currentMillis - previousMillis_1 >= interval_1) {
             previousMillis_1 = currentMillis;
 
-            // 直接更新CPU使用率 - Core 0
-            uint32_t current_cycle_count = xtensa_perfmon_value(PERF_COUNTER_CORE0);
-            if (last_cycle_count_core0 > 0) {
-                // 计算CPU使用率：当前周期数 - 上次周期数 = 实际使用的周期数
-                uint32_t cycles_used = current_cycle_count - last_cycle_count_core0;
-                // 假设最大周期数为240MHz * 1秒 = 240,000,000
-                cpu_usage[0] = (float)cycles_used / 240000000.0f * 100.0f;
-                ESP_LOGI(TAG, "Core0 CPU usage: %.2f%%", cpu_usage[0]);
+            // 实时获取当前CPU频率（单位：MHz）
+            uint32_t cpu_frequency_mhz = (uint32_t)esp_rom_get_cpu_ticks_per_us();
+            uint32_t cpu_frequency_hz = cpu_frequency_mhz * 1000000;
+            
+            xtensa_perfmon_stop();    // 停止性能监控并读取计数器值
+            uint32_t current_perf_counter_value_core0 = xtensa_perfmon_value(PERF_COUNTER_CORE0); // 读取核心0的性能计数器的值
+            
+            if (!first_reading) {
+                // 计算1秒内的实际周期数
+                uint32_t cycles_used = current_perf_counter_value_core0 - last_perf_counter_value_core0;
+                // 计算总可用周期数（频率 × 时间）
+                uint32_t total_available_cycles = cpu_frequency_hz; // 1秒内的总周期数
+                
+                // 计算CPU使用率
+                cpu_usage[0] = (float)cycles_used / (float)total_available_cycles * 100.0f;
+                
+                // 限制使用率范围在0-100%
+                if (cpu_usage[0] < 0.0f) cpu_usage[0] = 0.0f;
+                if (cpu_usage[0] > 100.0f) cpu_usage[0] = 100.0f;
+                
+                ESP_LOGI(TAG, "核心0的CPU占用率：%.2f%% (频率：%"PRIu32"MHz)", cpu_usage[0], cpu_frequency_mhz);
+            } else {
+                first_reading = false;
+                ESP_LOGI(TAG, "核心0：首次读数，跳过计算");
             }
-            last_cycle_count_core0 = current_cycle_count;
+            
+            last_perf_counter_value_core0 = current_perf_counter_value_core0;
+            xtensa_perfmon_reset(PERF_COUNTER_CORE0);    // 重置性能计数器，为下一次计算做准备
+            xtensa_perfmon_start();    // 重新启动性能监控
         }
         
         vTaskDelay(pdMS_TO_TICKS(10)); // 10ms延迟，减少CPU占用
@@ -128,6 +153,11 @@ static void core1_perfmon_task(void *arg) {
         ESP_LOGE(TAG, "Failed to init perfmon counter for core 1: %s", esp_err_to_name(xtensa_perfmon_result));
         return;
     }
+    
+    // 添加基准值记录
+    static uint32_t last_perf_counter_value_core1 = 0;
+    bool first_reading = true;
+    
     // 定时器变量 - 统一使用millis()
     unsigned long previousMillis_1 = millis();  // 1秒间隔
     const long interval_1 = 1 * 1000;     // 1秒间隔时间（毫秒）
@@ -139,16 +169,35 @@ static void core1_perfmon_task(void *arg) {
         if (currentMillis - previousMillis_1 >= interval_1) {
             previousMillis_1 = currentMillis;
 
-            // 直接更新CPU使用率 - Core 1
-            uint32_t current_cycle_count = xtensa_perfmon_value(PERF_COUNTER_CORE1);
-            if (last_cycle_count_core1 > 0) {
-                // 计算CPU使用率：当前周期数 - 上次周期数 = 实际使用的周期数
-                uint32_t cycles_used = current_cycle_count - last_cycle_count_core1;
-                // 假设最大周期数为240MHz * 1秒 = 240,000,000
-                cpu_usage[1] = (float)cycles_used / 240000000.0f * 100.0f;
-                ESP_LOGI(TAG, "Core1 CPU usage: %.2f%%", cpu_usage[1]);
+            // 实时获取当前CPU频率（单位：MHz）
+            uint32_t cpu_frequency_mhz = (uint32_t)esp_rom_get_cpu_ticks_per_us();
+            uint32_t cpu_frequency_hz = cpu_frequency_mhz * 1000000;
+            
+            xtensa_perfmon_stop();    // 停止性能监控并读取计数器值
+            uint32_t current_perf_counter_value_core1 = xtensa_perfmon_value(PERF_COUNTER_CORE1); // 读取核心1的性能计数器的值
+            
+            if (!first_reading) {
+                // 计算1秒内的实际周期数
+                uint32_t cycles_used = current_perf_counter_value_core1 - last_perf_counter_value_core1;
+                // 计算总可用周期数（频率 × 时间）
+                uint32_t total_available_cycles = cpu_frequency_hz; // 1秒内的总周期数
+                
+                // 计算CPU使用率
+                cpu_usage[1] = (float)cycles_used / (float)total_available_cycles * 100.0f;
+                
+                // 限制使用率范围在0-100%
+                if (cpu_usage[1] < 0.0f) cpu_usage[1] = 0.0f;
+                if (cpu_usage[1] > 100.0f) cpu_usage[1] = 100.0f;
+                
+                ESP_LOGI(TAG, "核心1的CPU占用率：%.2f%% (频率：%"PRIu32"MHz)", cpu_usage[1], cpu_frequency_mhz);
+            } else {
+                first_reading = false;
+                ESP_LOGI(TAG, "核心1：首次读数，跳过计算");
             }
-            last_cycle_count_core1 = current_cycle_count;
+            
+            last_perf_counter_value_core1 = current_perf_counter_value_core1;
+            xtensa_perfmon_reset(PERF_COUNTER_CORE1);    // 重置性能计数器，为下一次计算做准备
+            xtensa_perfmon_start();    // 重新启动性能监控
         }
         
         vTaskDelay(pdMS_TO_TICKS(10)); // 10ms延迟，减少CPU占用
@@ -232,13 +281,13 @@ void app_main(void) {
     }
 
     // 创建Core 0性能监控任务（运行在Core 0）
-    if (xTaskCreatePinnedToCore(core0_perfmon_task, "core0_perfmon", 4096, NULL, 5, NULL, 0) != pdPASS) {
+    if (xTaskCreatePinnedToCore(core0_perfmon_task, "core0_perfmon", 4096, NULL, tskIDLE_PRIORITY+5, &runtime_0_task_handle, 0) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create Core0 performance monitoring task");
         return;
     }
 
     // 创建Core 1性能监控任务（运行在Core 1）
-    if (xTaskCreatePinnedToCore(core1_perfmon_task, "core1_perfmon", 4096, NULL, 5, NULL, 1) != pdPASS) {
+    if (xTaskCreatePinnedToCore(core1_perfmon_task, "core1_perfmon", 4096, NULL, tskIDLE_PRIORITY+5, &runtime_1_task_handle, 1) != pdPASS) {
         ESP_LOGE(TAG, "Failed to create Core1 performance monitoring task");
         return;
     }
