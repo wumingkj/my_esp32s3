@@ -1,8 +1,9 @@
 #ifndef WHITELIST_MANAGER_H
 #define WHITELIST_MANAGER_H
 
-#include "esp_system.h"
 #include <stdbool.h>
+
+#include "esp_system.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,8 +11,8 @@ extern "C" {
 
 // 白名单MAC地址结构体
 typedef struct {
-    char mac[18];           // MAC地址格式：AA:BB:CC:DD:EE:FF
-    char description[64];   // 描述信息
+    char mac[18];          // MAC地址格式：AA:BB:CC:DD:EE:FF
+    char description[64];  // 描述信息
 } whitelist_mac_t;
 
 /**
@@ -65,4 +66,4 @@ esp_err_t whitelist_manager_load_macs(void);
 }
 #endif
 
-#endif // WHITELIST_MANAGER_H
+#endif  // WHITELIST_MANAGER_H

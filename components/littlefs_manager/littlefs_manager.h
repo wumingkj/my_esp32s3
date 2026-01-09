@@ -1,15 +1,16 @@
 #ifndef LITTLEFS_MANAGER_H
 #define LITTLEFS_MANAGER_H
 
-#include "esp_system.h"
-#include "esp_log.h"
-#include "esp_vfs.h"
-#include "esp_littlefs.h"
-#include "esp_partition.h"
-#include "dirent.h"
-#include "sys/stat.h"
 #include <stdio.h>
 #include <string.h>
+
+#include "dirent.h"
+#include "esp_littlefs.h"
+#include "esp_log.h"
+#include "esp_partition.h"
+#include "esp_system.h"
+#include "esp_vfs.h"
+#include "sys/stat.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -17,9 +18,9 @@ extern "C" {
 
 // 文件系统信息结构体
 typedef struct {
-    const char* mount_point;        // 挂载点
-    const char* partition_label;    // 分区标签
-    bool format_if_mount_failed;    // 挂载失败时是否格式化
+    const char* mount_point;      // 挂载点
+    const char* partition_label;  // 分区标签
+    bool format_if_mount_failed;  // 挂载失败时是否格式化
 } filesystem_info_t;
 
 // 文件系统操作函数声明
@@ -51,13 +52,11 @@ size_t littlefs_manager_get_total_size(void);
 size_t littlefs_manager_get_used_size(void);
 
 // Web专用文件服务函数（专用层）
-esp_err_t littlefs_manager_serve_web_file(const char* filepath, 
-                                         const char** content_type, 
-                                         char** file_content, 
-                                         size_t* file_size);
+esp_err_t littlefs_manager_serve_web_file(const char* filepath, const char** content_type, char** file_content,
+                                          size_t* file_size);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif // LITTLEFS_MANAGER_H
+#endif  // LITTLEFS_MANAGER_H

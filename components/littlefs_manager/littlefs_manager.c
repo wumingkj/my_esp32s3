@@ -1,22 +1,21 @@
 #include "littlefs_manager.h"
-#include "esp_littlefs.h"
+
 #include <errno.h>
 
-static const char *TAG = "littlefs_manager";
+#include "esp_littlefs.h"
+
+static const char* TAG = "littlefs_manager";
 
 // 默认文件系统配置
 static filesystem_info_t fs_info = {
-    .mount_point = "/littlefs",
-    .partition_label = "littlefs",
-    .format_if_mount_failed = true
-};
+    .mount_point = "/littlefs", .partition_label = "littlefs", .format_if_mount_failed = true};
 
 static bool fs_mounted = false;
 
 // 初始化文件系统（参考官方demo实现）
 esp_err_t littlefs_manager_init(void) {
     esp_err_t ret = ESP_FAIL;
-    
+
     ESP_LOGI(TAG, "Initializing LittleFS filesystem...");
 
     // 验证配置参数
@@ -26,15 +25,12 @@ esp_err_t littlefs_manager_init(void) {
     }
 
     // LittleFS 配置（参考官方demo）
-    esp_vfs_littlefs_conf_t conf = {
-        .base_path = fs_info.mount_point,
-        .partition_label = fs_info.partition_label,
-        .format_if_mount_failed = fs_info.format_if_mount_failed,
-        .dont_mount = false
-    };
+    esp_vfs_littlefs_conf_t conf = {.base_path = fs_info.mount_point,
+                                    .partition_label = fs_info.partition_label,
+                                    .format_if_mount_failed = fs_info.format_if_mount_failed,
+                                    .dont_mount = false};
 
-    ESP_LOGI(TAG, "Mounting LittleFS: mount_point=%s, partition_label=%s", 
-             conf.base_path, conf.partition_label);
+    ESP_LOGI(TAG, "Mounting LittleFS: mount_point=%s, partition_label=%s", conf.base_path, conf.partition_label);
 
     // 使用esp_vfs_littlefs_register注册文件系统（参考官方demo）
     ret = esp_vfs_littlefs_register(&conf);
@@ -170,16 +166,15 @@ char* littlefs_manager_read_file(const char* path) {
 
     size_t bytes_read = fread(content, 1, file_size, file);
     if (bytes_read != (size_t)file_size) {
-        ESP_LOGE(TAG, "Failed to read complete file: %s (read %zu of %ld bytes)", 
-                 full_path, bytes_read, file_size);
+        ESP_LOGE(TAG, "Failed to read complete file: %s (read %zu of %ld bytes)", full_path, bytes_read, file_size);
         free(content);
         fclose(file);
         return NULL;
     }
-    
+
     content[bytes_read] = '\0';
     fclose(file);
-    
+
     ESP_LOGI(TAG, "File read successfully: %s (%ld bytes)", full_path, file_size);
     return content;
 }
@@ -204,8 +199,8 @@ bool littlefs_manager_write_file(const char* path, const char* content) {
     fclose(file);
 
     if (bytes_written != strlen(content)) {
-        ESP_LOGE(TAG, "Failed to write complete file content: %s (wrote %zu of %zu bytes)", 
-                 full_path, bytes_written, strlen(content));
+        ESP_LOGE(TAG, "Failed to write complete file content: %s (wrote %zu of %zu bytes)", full_path, bytes_written,
+                 strlen(content));
         return false;
     }
 
@@ -265,25 +260,23 @@ bool littlefs_manager_list_files(const char* path) {
 }
 
 // 使用迭代方式搜索文件的辅助函数（避免递归导致的栈溢出）
-static bool littlefs_manager_find_file_iterative(const char* filename, 
-                                                char* found_path, 
-                                                size_t path_size) {
+static bool littlefs_manager_find_file_iterative(const char* filename, char* found_path, size_t path_size) {
     if (filename == NULL || found_path == NULL || path_size == 0) {
         ESP_LOGE(TAG, "Invalid parameters for file search");
         return false;
     }
-    
+
     // 使用队列进行广度优先搜索，避免递归深度过大
     const size_t queue_size = 50;  // 减少队列大小，避免内存消耗过大
     char** dir_queue = malloc(sizeof(char*) * queue_size);
     size_t queue_front = 0;
     size_t queue_rear = 0;
-    
+
     if (dir_queue == NULL) {
         ESP_LOGE(TAG, "Failed to allocate memory for directory queue");
         return false;
     }
-    
+
     // 初始化队列，从根目录开始
     dir_queue[queue_rear] = strdup("/");
     if (dir_queue[queue_rear] == NULL) {
@@ -292,18 +285,18 @@ static bool littlefs_manager_find_file_iterative(const char* filename,
         return false;
     }
     queue_rear = (queue_rear + 1) % queue_size;
-    
+
     bool found = false;
     size_t search_depth = 0;
     const size_t max_depth = 10;  // 限制搜索深度
-    
+
     while (queue_front != queue_rear && !found && search_depth < max_depth) {
         search_depth++;
-        
+
         // 从队列中取出当前目录
         char* current_dir = dir_queue[queue_front];
         queue_front = (queue_front + 1) % queue_size;
-        
+
         // 构建完整路径
         char full_path[256];
         int needed = snprintf(full_path, sizeof(full_path), "%s%s", fs_info.mount_point, current_dir);
@@ -312,33 +305,33 @@ static bool littlefs_manager_find_file_iterative(const char* filename,
             free(current_dir);
             continue;
         }
-        
+
         DIR* dir = opendir(full_path);
         if (dir == NULL) {
             ESP_LOGW(TAG, "Failed to open directory: %s", full_path);
             free(current_dir);
             continue;
         }
-        
+
         struct dirent* entry;
         while ((entry = readdir(dir)) != NULL && !found) {
             // 安全检查：确保entry指针有效
             if (entry == NULL) {
                 continue;
             }
-            
+
             // 安全复制文件名
             char entry_filename[256];
             memset(entry_filename, 0, sizeof(entry_filename));
             size_t max_copy_len = sizeof(entry_filename) - 1;
             strncpy(entry_filename, entry->d_name, max_copy_len);
             entry_filename[max_copy_len] = '\0';
-            
+
             // 跳过当前目录和上级目录
             if (strcmp(entry_filename, ".") == 0 || strcmp(entry_filename, "..") == 0) {
                 continue;
             }
-            
+
             // 构建相对路径
             char item_path[512];  // 减少缓冲区大小
             needed = snprintf(item_path, sizeof(item_path), "%s/%s", current_dir, entry_filename);
@@ -346,7 +339,7 @@ static bool littlefs_manager_find_file_iterative(const char* filename,
                 ESP_LOGW(TAG, "Item path too long, skipping: %s/%s", current_dir, entry_filename);
                 continue;
             }
-            
+
             // 构建完整路径
             char full_item_path[512];  // 减少缓冲区大小
             needed = snprintf(full_item_path, sizeof(full_item_path), "%s%s", fs_info.mount_point, item_path);
@@ -354,13 +347,13 @@ static bool littlefs_manager_find_file_iterative(const char* filename,
                 ESP_LOGW(TAG, "Full item path too long, skipping: %s%s", fs_info.mount_point, item_path);
                 continue;
             }
-            
+
             struct stat st;
             if (stat(full_item_path, &st) != 0) {
                 ESP_LOGW(TAG, "Failed to stat file: %s", full_item_path);
                 continue;
             }
-            
+
             // 如果是目录，加入队列
             if (S_ISDIR(st.st_mode)) {
                 size_t next_rear = (queue_rear + 1) % queue_size;
@@ -386,23 +379,23 @@ static bool littlefs_manager_find_file_iterative(const char* filename,
                 }
             }
         }
-        
+
         closedir(dir);
         free(current_dir);
     }
-    
+
     // 清理队列中剩余的项目
     while (queue_front != queue_rear) {
         free(dir_queue[queue_front]);
         queue_front = (queue_front + 1) % queue_size;
     }
-    
+
     free(dir_queue);
-    
+
     if (!found) {
         ESP_LOGI(TAG, "File not found: %s", filename);
     }
-    
+
     return found;
 }
 
@@ -439,14 +432,14 @@ bool littlefs_manager_list_files_detailed(const char* path) {
             ESP_LOGW(TAG, "NULL entry pointer, skipping");
             continue;
         }
-        
+
         // 安全复制文件名
         char filename[256];
         memset(filename, 0, sizeof(filename));
         size_t max_copy_len = sizeof(filename) - 1;
         strncpy(filename, entry->d_name, max_copy_len);
         filename[max_copy_len] = '\0';
-        
+
         // 安全检查：文件名长度和有效性
         size_t name_len = strlen(filename);
         if (name_len == 0 || name_len > 255) {
@@ -471,17 +464,11 @@ bool littlefs_manager_list_files_detailed(const char* path) {
 
         // 格式化文件权限
         char permissions[11];
-        snprintf(permissions, sizeof(permissions), "%c%c%c%c%c%c%c%c%c%c",
-                 S_ISDIR(st.st_mode) ? 'd' : '-',
-                 (st.st_mode & S_IRUSR) ? 'r' : '-',
-                 (st.st_mode & S_IWUSR) ? 'w' : '-',
-                 (st.st_mode & S_IXUSR) ? 'x' : '-',
-                 (st.st_mode & S_IRGRP) ? 'r' : '-',
-                 (st.st_mode & S_IWGRP) ? 'w' : '-',
-                 (st.st_mode & S_IXGRP) ? 'x' : '-',
-                 (st.st_mode & S_IROTH) ? 'r' : '-',
-                 (st.st_mode & S_IWOTH) ? 'w' : '-',
-                 (st.st_mode & S_IXOTH) ? 'x' : '-');
+        snprintf(
+            permissions, sizeof(permissions), "%c%c%c%c%c%c%c%c%c%c", S_ISDIR(st.st_mode) ? 'd' : '-',
+            (st.st_mode & S_IRUSR) ? 'r' : '-', (st.st_mode & S_IWUSR) ? 'w' : '-', (st.st_mode & S_IXUSR) ? 'x' : '-',
+            (st.st_mode & S_IRGRP) ? 'r' : '-', (st.st_mode & S_IWGRP) ? 'w' : '-', (st.st_mode & S_IXGRP) ? 'x' : '-',
+            (st.st_mode & S_IROTH) ? 'r' : '-', (st.st_mode & S_IWOTH) ? 'w' : '-', (st.st_mode & S_IXOTH) ? 'x' : '-');
 
         // 格式化文件大小
         char size_str[16];
@@ -510,7 +497,7 @@ bool littlefs_manager_list_files_detailed(const char* path) {
     // 显示文件系统使用情况
     size_t total_size = 0, used_size = 0;
     esp_err_t ret = esp_littlefs_info(fs_info.partition_label, &total_size, &used_size);
-    
+
     if (ret == ESP_OK) {
         double total_mb = total_size / (1024.0 * 1024.0);
         double used_mb = used_size / (1024.0 * 1024.0);
@@ -563,7 +550,7 @@ size_t littlefs_manager_get_total_size(void) {
 
     size_t total = 0, used = 0;
     esp_err_t ret = esp_littlefs_info(fs_info.partition_label, &total, &used);
-    
+
     if (ret != ESP_OK) {
         return 0;
     }
@@ -579,7 +566,7 @@ size_t littlefs_manager_get_used_size(void) {
 
     size_t total = 0, used = 0;
     esp_err_t ret = esp_littlefs_info(fs_info.partition_label, &total, &used);
-    
+
     if (ret != ESP_OK) {
         return 0;
     }
@@ -610,12 +597,9 @@ bool littlefs_manager_rename_file(const char* old_path, const char* new_path) {
 }
 
 // Web专用文件服务函数（专用层）
-esp_err_t littlefs_manager_serve_web_file(const char* filepath, 
-                                         const char** content_type, 
-                                         char** file_content, 
-                                         size_t* file_size) {
-    if (!fs_mounted || filepath == NULL || content_type == NULL || 
-        file_content == NULL || file_size == NULL) {
+esp_err_t littlefs_manager_serve_web_file(const char* filepath, const char** content_type, char** file_content,
+                                          size_t* file_size) {
+    if (!fs_mounted || filepath == NULL || content_type == NULL || file_content == NULL || file_size == NULL) {
         ESP_LOGE(TAG, "Invalid parameters to serve_web_file");
         return ESP_FAIL;
     }

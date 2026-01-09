@@ -1,9 +1,9 @@
 #ifndef FREQUENCY_MANAGER_H
 #define FREQUENCY_MANAGER_H
 
-#include "esp_system.h"
-#include "esp_pm.h"
 #include "esp_log.h"
+#include "esp_pm.h"
+#include "esp_system.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -12,7 +12,7 @@ extern "C" {
 // 频率模式定义
 typedef enum {
     FREQ_MODE_PERFORMANCE = 0,  // 性能模式 - 最高频率
-    FREQ_MODE_BALANCED,         // 平衡模式 - 中等频率  
+    FREQ_MODE_BALANCED,         // 平衡模式 - 中等频率
     FREQ_MODE_POWER_SAVE,       // 省电模式 - 最低频率
     FREQ_MODE_CUSTOM            // 自定义模式
 } frequency_mode_t;
@@ -20,10 +20,10 @@ typedef enum {
 // 频率管理器配置
 typedef struct {
     frequency_mode_t current_mode;
-    int performance_freq;   // 性能模式频率 (MHz)
-    int balanced_freq;      // 平衡模式频率 (MHz)
-    int power_save_freq;    // 省电模式频率 (MHz)
-    int custom_freq;        // 自定义模式频率 (MHz)
+    int performance_freq;  // 性能模式频率 (MHz)
+    int balanced_freq;     // 平衡模式频率 (MHz)
+    int power_save_freq;   // 省电模式频率 (MHz)
+    int custom_freq;       // 自定义模式频率 (MHz)
 } frequency_manager_config_t;
 
 /**
@@ -31,7 +31,7 @@ typedef struct {
  * @param config 频率管理器配置
  * @return esp_err_t 错误码
  */
-esp_err_t frequency_manager_init(frequency_manager_config_t *config);
+esp_err_t frequency_manager_init(frequency_manager_config_t* config);
 
 /**
  * @brief 设置频率模式
@@ -63,4 +63,4 @@ double frequency_manager_get_current_frequency(void);
 }
 #endif
 
-#endif // FREQUENCY_MANAGER_H
+#endif  // FREQUENCY_MANAGER_H

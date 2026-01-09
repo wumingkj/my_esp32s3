@@ -1,13 +1,14 @@
 #ifndef DEVICE_MAPPING_H
 #define DEVICE_MAPPING_H
 
-#include "esp_system.h"
+#include <stdbool.h>
+#include <string.h>
+
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_system.h"
 #include "esp_wifi.h"
-#include <stdbool.h>
-#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,8 +30,8 @@ typedef struct {
 
 // 查找结果结构体
 typedef struct {
-    device_mapping_t* device;          // 找到的设备
-    int index;                        // 设备索引
+    device_mapping_t* device;  // 找到的设备
+    int index;                 // 设备索引
 } device_lookup_result_t;
 
 /**
@@ -129,4 +130,4 @@ device_mapping_t** device_mapping_get_all_devices_ex(int* count, bool exclude_un
 }
 #endif
 
-#endif // DEVICE_MAPPING_H
+#endif  // DEVICE_MAPPING_H

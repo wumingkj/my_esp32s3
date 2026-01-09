@@ -1,11 +1,11 @@
 #ifndef PARTITION_MANAGER_H
 #define PARTITION_MANAGER_H
 
-#include "esp_system.h"
-#include "nvs_flash.h"
+#include "esp_log.h"
 #include "esp_partition.h"
 #include "esp_pm.h"
-#include "esp_log.h"
+#include "esp_system.h"
+#include "nvs_flash.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -13,18 +13,18 @@ extern "C" {
 
 // 电源管理配置结构体
 typedef struct {
-    int max_freq_mhz;    // 最大CPU频率
-    int min_freq_mhz;    // 最小CPU频率
-    bool light_sleep_enable; // 是否启用轻睡眠
+    int max_freq_mhz;         // 最大CPU频率
+    int min_freq_mhz;         // 最小CPU频率
+    bool light_sleep_enable;  // 是否启用轻睡眠
 } power_management_config_t;
 
 // 分区信息结构体
 typedef struct {
-    char label[32];      // 分区标签
-    esp_partition_type_t type;     // 分区类型
-    esp_partition_subtype_t subtype; // 子类型
-    uint32_t address;    // 偏移地址
-    uint32_t size;       // 分区大小
+    char label[32];                   // 分区标签
+    esp_partition_type_t type;        // 分区类型
+    esp_partition_subtype_t subtype;  // 子类型
+    uint32_t address;                 // 偏移地址
+    uint32_t size;                    // 分区大小
 } partition_info_t;
 
 /**
@@ -38,7 +38,7 @@ esp_err_t partition_manager_init(void);
  * @param config 电源管理配置
  * @return esp_err_t 错误码
  */
-esp_err_t partition_manager_configure_power(power_management_config_t *config);
+esp_err_t partition_manager_configure_power(power_management_config_t* config);
 
 /**
  * @brief 列出所有分区信息
@@ -62,4 +62,4 @@ esp_err_t partition_manager_set_cpu_frequency(int freq_mhz);
 }
 #endif
 
-#endif // PARTITION_MANAGER_H
+#endif  // PARTITION_MANAGER_H

@@ -2,8 +2,9 @@
 #define USER_MANAGER_H
 
 #include <stdbool.h>
-#include "esp_err.h"
+
 #include "cJSON.h"
+#include "esp_err.h"
 
 #define MAX_USERNAME_LEN 32
 #define MAX_PASSWORD_LEN 64
@@ -13,7 +14,7 @@
 typedef struct {
     char username[MAX_USERNAME_LEN];
     char password[MAX_PASSWORD_LEN];
-    int role; // 0: 普通用户, 1: 管理员
+    int role;  // 0: 普通用户, 1: 管理员
 } user_t;
 
 // 使用whitelist_manager.h中的完整定义
@@ -42,4 +43,4 @@ esp_err_t device_manager_init(void);
 esp_err_t device_manager_refresh_devices(void);
 device_info_t** device_manager_get_devices(int* count);
 
-#endif // USER_MANAGER_H
+#endif  // USER_MANAGER_H

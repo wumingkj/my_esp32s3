@@ -1,9 +1,9 @@
-#include "littlefs_manager.h"
 #include "esp_log.h"
+#include "littlefs_manager.h"
 
-static const char *TAG = "littlefs_example";
+static const char* TAG = "littlefs_example";
 
-void littlefs_example_task(void *pvParameters) {
+void littlefs_example_task(void* pvParameters) {
     // 初始化文件系统
     esp_err_t ret = littlefs_manager_init();
     if (ret != ESP_OK) {
@@ -76,7 +76,7 @@ void littlefs_example_task(void *pvParameters) {
         } else {
             ESP_LOGE(TAG, "Filesystem is not mounted!");
         }
-        vTaskDelay(pdMS_TO_TICKS(10000)); // 每10秒检查一次
+        vTaskDelay(pdMS_TO_TICKS(10000));  // 每10秒检查一次
     }
 
     vTaskDelete(NULL);
