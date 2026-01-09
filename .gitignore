@@ -3,3 +3,4 @@
 *.ino
 sdkconfig.old
 build/*
+.clang-format
