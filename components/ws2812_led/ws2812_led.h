@@ -13,7 +13,7 @@ extern "C" {
 
 // 默认配置
 #define WS2812_PIN             48          /*!< WS2812控制引脚 GPIO48 */
-#define WS2812_NUM_LEDS        0          /*!< LED灯珠总数 1个 */
+#define WS2812_NUM_LEDS        1          /*!< LED灯珠总数 1个 */
 
 // 颜色结构体
 typedef struct {
