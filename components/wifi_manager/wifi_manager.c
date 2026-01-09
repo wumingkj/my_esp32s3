@@ -928,7 +928,7 @@ static esp_err_t devices_api_get_handler(httpd_req_t *req)
     // 使用统一的会话验证
     if (validate_api_session(req, username, sizeof(username)) != ESP_OK)
     {
-        return ESP_OK;
+return ESP_OK;
     }
 
     cJSON *root = cJSON_CreateObject();
@@ -1233,6 +1233,17 @@ esp_err_t wifi_manager_init(wifi_manager_config_t *config)
     else
     {
         ESP_LOGI(TAG, "Whitelist manager initialized successfully");
+    }
+
+    // 初始化设备映射表
+    esp_err_t device_mapping_ret = device_mapping_init();
+    if (device_mapping_ret != ESP_OK)
+    {
+        ESP_LOGW(TAG, "Device mapping initialization failed: %s", esp_err_to_name(device_mapping_ret));
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Device mapping initialized successfully");
     }
 
     ESP_LOGI(TAG, "WiFi manager initialized successfully");
